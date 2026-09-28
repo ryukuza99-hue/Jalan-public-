@@ -124,6 +124,13 @@ button{cursor:pointer}
 .rcell input{padding:8px 10px}
 .ratetbl{display:grid;grid-template-columns:1fr auto;gap:4px 12px;margin-top:12px;font-size:13.5px;border-top:1px solid var(--line);padding-top:10px}
 .ratetbl b{text-align:right}
+.sync{display:inline-block;font-size:11.5px;font-weight:600;margin-top:2px}
+.sync-ok{color:var(--jade)} .sync-pending{color:var(--sea)} .sync-offline{color:var(--amber)} .sync-error{color:var(--rose)}
+.presults{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.presult{text-align:left;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:8px 10px;display:flex;flex-direction:column;gap:1px}
+.presult .sub,.pchosen .sub{font-size:12.5px;color:var(--muted)}
+.pchosen{display:flex;gap:8px;align-items:flex-start;border:1.5px solid var(--jade);background:var(--jade-soft);border-radius:10px;padding:8px 10px}
+.pchosen .main{flex:1;min-width:0}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .resv{border:1px dashed var(--line);border-radius:12px;padding:8px 12px;margin:0 0 10px 58px;font-size:13.5px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .add{margin-left:58px}
@@ -187,6 +194,7 @@ textarea.io{width:100%;min-height:140px;font-family:ui-monospace,Consolas,monosp
 <nav class="tabs" id="tabs" hidden></nav>
 <div id="sheetRoot"></div>
 
+<script src="config.js"></script>
 <script>
 (() => {
 'use strict';
@@ -260,10 +268,211 @@ function load() {
   return blank();
 }
 let state = load();
-function save() {
+function save(fromRemote) {
   try { localStorage.setItem(KEY, JSON.stringify(state)); storageOk = true; } catch (e) { storageOk = false; }
+  if (!fromRemote) state.trips.forEach((t) => { if (t.shareId) pushChanges(t); });
 }
 const trip = () => state.trips.find((t) => t.id === state.activeTripId) || null;
+const CFG = window.JALAN_CONFIG || {};
+
+/* ---------- sinkron antar-HP (Firebase Firestore) ----------
+ * Satu dokumen per trip: trips/<kode>. Setiap aktivitas, tempat, booking, pengeluaran, dan checklist
+ * disimpan sebagai field terpisah (items.<id>), jadi dua orang yang mengubah hal berbeda tidak saling menimpa.
+ * state.seen menyimpan versi terakhir yang sudah sama dengan server, untuk menghitung perubahan yang perlu dikirim.
+ */
+const COLL = ['items', 'places', 'bookings', 'expenses', 'checklist'];
+const META = ['name', 'place', 'start', 'end', 'cur', 'budgetIdr', 'notes', 'color'];
+const FB_VERSION = '10.12.2';
+let fb = null, fbLoading = null;
+const subs = {}; // shareId -> unsubscribe
+const syncState = {}; // trip.id -> 'ok' | 'pending' | 'offline' | 'error'
+const syncEnabled = () => !!(CFG.firebase && CFG.firebase.projectId);
+const plain = (x) => JSON.parse(JSON.stringify(x));
+
+async function fbInit() {
+  if (fb) return fb;
+  if (!syncEnabled()) return null;
+  if (!fbLoading) {
+    fbLoading = (async () => {
+      const base = `https://www.gstatic.com/firebasejs/${FB_VERSION}/`;
+      const [appM, authM, fsM] = await Promise.all([import(base + 'firebase-app.js'), import(base + 'firebase-auth.js'), import(base + 'firebase-firestore.js')]);
+      const app = appM.initializeApp(CFG.firebase);
+      let db;
+      try { db = fsM.initializeFirestore(app, { localCache: fsM.persistentLocalCache({ tabManager: fsM.persistentMultipleTabManager() }) }); }
+      catch (e) { db = fsM.getFirestore(app); }
+      const auth = authM.getAuth(app);
+      if (auth.authStateReady) await auth.authStateReady();
+      if (!auth.currentUser) { try { await authM.signInAnonymously(auth); } catch (e) { /* offline: dicoba lagi saat online */ } }
+      fb = { db, fs: fsM, auth, authM };
+      return fb;
+    })().catch((e) => { fbLoading = null; throw e; });
+  }
+  return fbLoading;
+}
+function toRemote(t) {
+  const r = { meta: {} };
+  META.forEach((k) => { r.meta[k] = t[k] ?? null; });
+  COLL.forEach((c) => { r[c] = Object.fromEntries((t[c] || []).map((x) => [x.id, plain(x)])); });
+  return r;
+}
+function markSeen(t, remote) {
+  const s = { meta: JSON.stringify(remote.meta) };
+  COLL.forEach((c) => { s[c] = Object.fromEntries(Object.entries(remote[c]).map(([id, x]) => [id, JSON.stringify(x)])); });
+  state.seen = state.seen || {}; state.seen[t.shareId] = s;
+}
+function pushChanges(t) {
+  if (!fb || !t.shareId || t.joining) return;
+  const { fs, db } = fb;
+  const cur = toRemote(t), seen = (state.seen && state.seen[t.shareId]) || { meta: '', items: {}, places: {}, bookings: {}, expenses: {}, checklist: {} };
+  const upd = {};
+  if (JSON.stringify(cur.meta) !== seen.meta) upd.meta = cur.meta;
+  COLL.forEach((c) => {
+    const s = seen[c] || {};
+    Object.entries(cur[c]).forEach(([id, x]) => { if (s[id] !== JSON.stringify(x)) upd[`${c}.${id}`] = x; });
+    Object.keys(s).forEach((id) => { if (!(id in cur[c])) upd[`${c}.${id}`] = fs.deleteField(); });
+  });
+  if (!Object.keys(upd).length) return;
+  upd.updatedAt = fs.serverTimestamp();
+  markSeen(t, cur);
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* abaikan */ }
+  syncState[t.id] = navigator.onLine ? 'pending' : 'offline';
+  fs.updateDoc(fs.doc(db, 'trips', t.shareId), upd).catch((err) => { syncState[t.id] = 'error'; console.warn('sinkron gagal', err); toast('Gagal sinkron: ' + (err.code || 'coba lagi')); render(); });
+}
+// Terapkan data server ke trip lokal. Objek lama dipertahankan (diubah di tempat) supaya form yang sedang terbuka tetap tersambung.
+function applyRemote(t, data) {
+  const meta = data.meta || {};
+  META.forEach((k) => { if (k in meta && meta[k] !== null) t[k] = meta[k]; });
+  COLL.forEach((c) => {
+    const m = data[c] || {};
+    const old = new Map((t[c] || []).map((x) => [x.id, x]));
+    t[c] = Object.values(m).filter((x) => x && x.id).map((rx) => {
+      const o = old.get(rx.id);
+      if (!o) return Object.assign({}, rx);
+      Object.keys(o).forEach((k) => { if (!(k in rx)) delete o[k]; });
+      return Object.assign(o, rx);
+    });
+  });
+}
+function subscribe(t) {
+  if (!fb || !t.shareId || subs[t.shareId]) return;
+  const { fs, db } = fb;
+  pushChanges(t); // kirim perubahan yang dibuat saat offline sebelum mendengarkan server
+  subs[t.shareId] = fs.onSnapshot(fs.doc(db, 'trips', t.shareId), { includeMetadataChanges: true }, (snap) => {
+    const tt = state.trips.find((x) => x.shareId === t.shareId);
+    if (!tt) return;
+    if (!snap.exists()) {
+      if (!snap.metadata.fromCache && tt.joining) {
+        state.trips = state.trips.filter((x) => x !== tt); if (state.activeTripId === tt.id) state.activeTripId = null;
+        unsubscribe(tt.shareId); save(true); render(); toast('Kode trip tidak ditemukan');
+      }
+      return;
+    }
+    const data = snap.data();
+    applyRemote(tt, data);
+    tt.joining = false;
+    markSeen(tt, toRemote(tt));
+    syncState[tt.id] = snap.metadata.hasPendingWrites ? (navigator.onLine ? 'pending' : 'offline') : snap.metadata.fromCache ? 'offline' : 'ok';
+    save(true); softRender();
+  }, (err) => { syncState[t.id] = 'error'; toast('Sinkron berhenti: ' + (err.code || 'error')); render(); });
+}
+function unsubscribe(code) { if (subs[code]) { subs[code](); delete subs[code]; } }
+async function startSync() {
+  if (!syncEnabled() || !state.trips.some((t) => t.shareId)) return;
+  try { await fbInit(); state.trips.forEach(subscribe); } catch (e) { console.warn(e); }
+}
+function newCode() {
+  const abc = 'abcdefghjkmnpqrstuvwxyz23456789';
+  const a = new Uint8Array(20); crypto.getRandomValues(a);
+  return Array.from(a, (n) => abc[n % abc.length]).join('');
+}
+async function enableShare(t) {
+  if (!syncEnabled()) { openSheetHtml('Berbagi trip', setupHelp('sync')); return; }
+  try {
+    const { fs, db } = await fbInit();
+    t.shareId = newCode();
+    const remote = toRemote(t);
+    markSeen(t, remote);
+    save(true);
+    fs.setDoc(fs.doc(db, 'trips', t.shareId), Object.assign({}, remote, { createdAt: fs.serverTimestamp(), updatedAt: fs.serverTimestamp() }))
+      .catch((err) => { syncState[t.id] = 'error'; toast('Gagal membuat trip bersama: ' + (err.code || '')); render(); });
+    subscribe(t); render(); shareSheet(t);
+  } catch (e) { toast('Tidak bisa terhubung. Cek internet atau pengaturan Firebase.'); }
+}
+async function joinTrip(code) {
+  code = String(code || '').trim().toLowerCase().replace(/.*#gabung-/, '').replace(/[^a-z0-9]/g, '');
+  if (code.length < 16) { toast('Kode trip tidak valid'); return; }
+  const existing = state.trips.find((t) => t.shareId === code);
+  if (existing) { state.activeTripId = existing.id; state.tab = 'plan'; save(true); render(); return; }
+  if (!syncEnabled()) { toast('Fitur berbagi belum diaktifkan di aplikasi ini'); return; }
+  try {
+    await fbInit();
+    const t = newTrip({ name: 'Memuat trip…', shareId: code, joining: true });
+    state.trips.push(t); state.activeTripId = t.id; state.tab = 'plan';
+    save(true); render(); subscribe(t); closeSheet();
+  } catch (e) { toast('Tidak bisa terhubung. Coba lagi saat online.'); }
+}
+const shareUrl = (t) => `${location.origin}${location.pathname}#gabung-${t.shareId}`;
+function shareSheet(t) {
+  openSheetHtml('Bagikan trip', `<p style="margin-top:0;font-size:14.5px">Kirim link ini ke teman. Setelah dibuka, trip yang sama muncul di HP-nya, dan perubahan dari siapa pun langsung terlihat di HP lainnya.</p>
+    <textarea class="io" id="shareText" readonly style="min-height:70px">${esc(shareUrl(t))}</textarea>
+    <p class="muted" style="font-size:12.5px">Siapa pun yang punya link ini bisa melihat dan mengubah trip. Bagikan hanya ke teman seperjalanan.</p>
+    <div class="foot"><button class="btn ghost" data-a="closeSheet">Tutup</button>
+      ${navigator.share ? '<button class="btn ghost" data-a="nativeShare">Kirim…</button>' : ''}<button class="btn" data-a="copyShare">Salin link</button></div>`);
+}
+function joinSheet() {
+  openSheetHtml('Gabung trip teman', `<p style="margin-top:0;font-size:14.5px">Tempel link atau kode trip yang dikirim temanmu.</p>
+    <div class="f"><label for="joinCode">Link atau kode</label><input id="joinCode" autocomplete="off" placeholder="https://…#gabung-…"></div>
+    <div class="foot"><button class="btn ghost" data-a="closeSheet">Batal</button><button class="btn" data-a="doJoin">Gabung</button></div>`);
+}
+function syncBadge(t) {
+  if (!t.shareId) return '';
+  const s = t.joining ? 'pending' : (!navigator.onLine ? 'offline' : syncState[t.id] || 'pending');
+  const txt = { ok: 'Tersinkron', pending: 'Menyinkronkan…', offline: 'Offline, dikirim saat online', error: 'Gagal sinkron' }[s];
+  return `<span class="sync sync-${s}">● ${txt}</span>`;
+}
+let pendingRender = false;
+function softRender() {
+  const a = document.activeElement;
+  if (a && app.contains(a) && a.matches('input,textarea')) { pendingRender = true; return; }
+  render();
+}
+document.addEventListener('focusout', () => { if (pendingRender) { pendingRender = false; setTimeout(render, 0); } });
+
+/* ---------- rating & link Google Maps otomatis (Places API) ---------- */
+let mapsP = null;
+const placesEnabled = () => !!CFG.googleMapsKey;
+function loadMaps() {
+  if (!placesEnabled()) return Promise.resolve(null);
+  if (!mapsP) {
+    mapsP = new Promise((resolve, reject) => {
+      window.__jalanMapsReady = () => resolve(window.google.maps);
+      window.gm_authFailure = () => toast('API key Google Maps ditolak. Cek pengaturan key.');
+      const s = document.createElement('script');
+      s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(CFG.googleMapsKey)}&v=weekly&loading=async&language=id&callback=__jalanMapsReady`;
+      s.async = true; s.onerror = () => { mapsP = null; reject(new Error('Google Maps tidak termuat')); };
+      document.head.appendChild(s);
+    });
+  }
+  return mapsP;
+}
+const placeCache = new Map();
+async function searchPlaces(query) {
+  const key = fold(query);
+  if (placeCache.has(key)) return placeCache.get(key);
+  const maps = await loadMaps();
+  if (!maps) return [];
+  const { Place } = await maps.importLibrary('places');
+  const { places } = await Place.searchByText({
+    textQuery: query, maxResultCount: 5, language: 'id',
+    fields: ['id', 'displayName', 'formattedAddress', 'rating', 'userRatingCount', 'googleMapsURI'],
+  });
+  const out = places.map((p) => ({ pid: p.id, name: p.displayName || '', address: p.formattedAddress || '', rating: p.rating ?? null, count: p.userRatingCount ?? 0, uri: p.googleMapsURI || '', at: Date.now() }));
+  placeCache.set(key, out);
+  return out;
+}
+// Tambahkan nama kota tujuan ke pencarian supaya "Kiss Bridge" tidak ketemu tempat di negara lain.
+const withPlace = (q, place) => (place && !fold(q).includes(fold(place.split(',')[0])) ? `${q}, ${place}` : q);
+const gRating = (g) => (g && g.rating ? `★ ${g.rating.toFixed(1).replace('.', ',')}<small> · ${fmtN(g.count)} ulasan Google</small>` : '');
 
 /* ---------- kurs ---------- */
 let rateStatus = {}; // cur -> 'loading' | 'ok' | 'fail'
@@ -332,9 +541,12 @@ function newTrip(data) {
 const isUrl = (s) => /^https?:\/\//i.test(String(s || '').trim());
 const mapsQuery = (t, x) => (x.location && !isUrl(x.location) ? x.location : [x.title, t.place].filter(Boolean).join(', '));
 const mapsSearch = (q) => 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q);
-const mapsOpen = (t, x) => (isUrl(x.location) ? x.location.trim() : mapsSearch(mapsQuery(t, x)));
-// Tanpa origin → Google Maps memakai posisi HP saat ini.
-const mapsNav = (t, x) => 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + encodeURIComponent(mapsQuery(t, x));
+const mapsOpen = (t, x) => (x.g && x.g.uri) || (isUrl(x.location) ? x.location.trim() : mapsSearch(mapsQuery(t, x)));
+// Tanpa origin → Google Maps memakai posisi HP saat ini. Place ID membuat tujuannya tepat.
+const mapsNav = (t, x) => {
+  const dest = x.g && x.g.name ? [x.g.name, x.g.address].filter(Boolean).join(', ') : mapsQuery(t, x);
+  return 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + encodeURIComponent(dest) + (x.g && x.g.pid ? '&destination_place_id=' + encodeURIComponent(x.g.pid) : '');
+};
 function reviewLinks(t, x) {
   const name = [x.title, (t && t.place) || x.city || ''].filter(Boolean).join(' ');
   const site = (d) => 'https://www.google.com/search?q=' + encodeURIComponent(`site:${d} ${name}`);
@@ -347,7 +559,11 @@ function ratingAvg(x) {
   const vals = PLATFORMS.map(([k]) => x.ratings && x.ratings[k]).filter((v) => v > 0 && v <= 5);
   return vals.length ? { avg: vals.reduce((s, v) => s + v, 0) / vals.length, n: vals.length } : null;
 }
-const stars = (x) => { const r = ratingAvg(x); return r ? `<span class="star num">★ ${r.avg.toFixed(1).replace('.', ',')}<small> · ${r.n} platform</small></span>` : ''; };
+const stars = (x) => {
+  if (x.g && x.g.rating) return `<span class="star num">${gRating(x.g)}</span>`;
+  const r = ratingAvg(x); return r ? `<span class="star num">★ ${r.avg.toFixed(1).replace('.', ',')}<small> · ${r.n} platform</small></span>` : '';
+};
+const ratingValue = (x) => (x.g && x.g.rating) || (ratingAvg(x) || { avg: 0 }).avg;
 function mapsRoute(stops) {
   if (stops.length < 2) return null;
   const enc = encodeURIComponent;
@@ -380,6 +596,7 @@ function render() {
       .map(([k, l]) => `<button data-a="tab" data-k="${k}" ${state.tab === k ? 'aria-current="page"' : ''}>${ICON[k]}${l}</button>`).join('')}</div>`;
     const views = { plan: renderPlan, places: renderPlaces, bookings: renderBookings, budget: renderBudget, more: renderMore };
     app.innerHTML = renderTripHeader(t) + (views[state.tab] || renderPlan)(t) + renderFab();
+    if (state.tab === 'places') fetchCatalogRatings(CATALOG[state.placeCity] ? state.placeCity : 'phu-quoc');
   }
 }
 
@@ -405,6 +622,7 @@ function renderTrips() {
           </div></button>`;
       }).join('') : `<div class="empty">Belum ada trip. Buat trip baru, lalu isi rencana harian, tempat, booking, dan pengeluaran sendiri.</div>`}
       <button class="btn block" data-a="newTrip">+ Trip baru</button>
+      <button class="btn ghost block" data-a="joinOpen">Gabung trip teman</button>
       <button class="btn ghost block" data-a="template">Mulai dari contoh: Phu Quoc 4 hari</button>
       <button class="btn ghost block" data-a="importOpen">Pulihkan dari cadangan</button>
       ${standalone() ? '' : `<button class="btn ghost block" data-a="install">${installEvt ? 'Pasang aplikasi di HP ini' : 'Cara pasang di HP'}</button>`}
@@ -414,7 +632,7 @@ function renderTrips() {
 function renderTripHeader(t) {
   return `<header class="top">
     <button class="iconbtn" data-a="home" aria-label="Semua trip">←</button>
-    <div class="grow"><h1>${esc(t.name || 'Trip')}</h1><div class="sub">${esc(t.place)}${t.place ? ' · ' : ''}${rangeLabel(t.start, t.end)}</div></div>
+    <div class="grow"><h1>${esc(t.name || 'Trip')}</h1><div class="sub">${esc(t.place)}${t.place ? ' · ' : ''}${rangeLabel(t.start, t.end)}</div>${syncBadge(t)}</div>
     <button class="iconbtn" data-a="editTrip" aria-label="Ubah trip">Ubah</button>
   </header>${storageWarning()}`;
 }
@@ -487,7 +705,8 @@ function renderItem(t, it, orphan) {
 
 let exploreQuery = '';
 function renderPlaces(t) {
-  const saved = [...t.places].sort((a, b) => ((ratingAvg(b) || { avg: 0 }).avg - (ratingAvg(a) || { avg: 0 }).avg));
+  const saved = [...t.places].sort((a, b) => ratingValue(b) - ratingValue(a));
+  const missing = placesEnabled() ? t.places.concat(t.items).filter((x) => !x.g && x.type !== 'transport').length : 0;
   const city = CATALOG[state.placeCity] ? state.placeCity : 'phu-quoc';
   const savedNames = new Set(t.places.map((p) => fold(p.title)).concat(t.items.map((i) => fold(i.title))));
   const q = fold(exploreQuery.trim());
@@ -505,7 +724,9 @@ function renderPlaces(t) {
           <a href="${esc(mapsOpen(t, p))}" target="_blank" rel="noopener">Maps</a>
           <button data-a="reviews" data-kind="places" data-id="${p.id}">Review</button></div>
       </div></div>`).join('')}</div>`
-      : `<div class="empty">Belum ada. Simpan dari daftar di bawah atau tekan "+ Tempat". Tempat yang sudah diberi rating diurutkan dari yang tertinggi.</div>`}
+      : `<div class="empty">Belum ada. Simpan dari daftar di bawah atau tekan "+ Tempat". Tempat diurutkan dari rating tertinggi.</div>`}
+    ${missing ? `<button class="btn ghost small block" style="margin-top:10px" data-a="fillRatings">Ambil rating Google untuk ${missing} tempat & aktivitas</button>` : ''}
+    ${placesEnabled() ? '' : `<button class="btn ghost small block" style="margin-top:10px" data-a="setupHelp" data-k="places">Aktifkan rating Google otomatis</button>`}
 
     <div class="section-h"><h2>Jelajahi</h2></div>
     <div class="row" style="gap:6px;margin-bottom:10px">${Object.entries(CATALOG).map(([k, c]) => `<button class="chip" data-a="placeCity" data-k="${k}" aria-pressed="${k === city}">${esc(c.label)}</button>`).join('')}</div>
@@ -515,20 +736,54 @@ function renderPlaces(t) {
     <div class="card" style="margin-top:10px">${list.length ? list.map((c, i) => {
       const has = savedNames.has(fold(c.title));
       const rl = reviewLinks({ place: CATALOG[city].place }, c);
+      const g = catG(c);
       return `<div class="li"><div class="main">
-        <span class="pill t-${c.type}">${esc(label(ITEM_TYPES, c.type))}</span>
+        <div class="row" style="gap:6px"><span class="pill t-${c.type}">${esc(label(ITEM_TYPES, c.type))}</span>${g && g.rating ? `<span class="star num">${gRating(g)}</span>` : ''}</div>
         <div class="title" style="margin-top:4px">${esc(c.title)}</div>
         <div class="sub">${esc(c.note)}</div>
         <div class="acts">
           ${has ? '<button disabled>Tersimpan</button>' : `<button data-a="saveCatalog" data-city="${city}" data-i="${CATALOG[city].items.indexOf(c)}">+ Simpan</button>`}
-          <a class="go" href="${esc(mapsSearch(c.location))}" target="_blank" rel="noopener">Maps</a>
+          <a class="go" href="${esc((g && g.uri) || mapsSearch(c.location))}" target="_blank" rel="noopener">Maps</a>
           <a href="${esc(rl.klook)}" target="_blank" rel="noopener">Klook</a>
           <a href="${esc(rl.tripadvisor)}" target="_blank" rel="noopener">Tripadvisor</a>
         </div></div></div>`;
     }).join('') : '<div class="li"><div class="main muted">Tidak ada di daftar. Pakai tombol Google Maps di atas.</div></div>'}</div>`;
 }
 
-/* Daftar tempat pilihan. Rating tidak disertakan: lihat langsung di tiap platform lewat tombol Review. */
+/* Rating daftar Jelajahi diambil dari Google sekali, lalu disegarkan setelah 30 hari. */
+const catG = (c) => (state.gcat || {})[fold(c.location)] || null;
+let catQueue = false;
+async function fetchCatalogRatings(city) {
+  if (catQueue || !placesEnabled() || !navigator.onLine) return;
+  const todo = CATALOG[city].items.filter((c) => { const g = catG(c); return !g || Date.now() - g.at > 30 * 86400000; });
+  if (!todo.length) return;
+  catQueue = true;
+  state.gcat = state.gcat || {};
+  try {
+    for (const c of todo) {
+      const res = await searchPlaces(withPlace(c.location, CATALOG[city].place));
+      state.gcat[fold(c.location)] = res[0] || { rating: null, count: 0, uri: '', at: Date.now() };
+      save(true); if (state.tab === 'places') softRender();
+    }
+  } catch (e) { console.warn(e); }
+  catQueue = false;
+}
+async function fillRatings(t) {
+  const list = t.places.concat(t.items).filter((x) => !x.g && x.type !== 'transport');
+  if (!list.length) return;
+  toast(`Mengambil rating ${list.length} tempat…`);
+  let ok = 0;
+  for (const x of list) {
+    try {
+      const q = withPlace(isUrl(x.location) || !x.location ? x.title : x.location, t.place);
+      const res = await searchPlaces(q);
+      if (res[0]) { x.g = res[0]; ok++; }
+    } catch (e) { toast('Gagal mengambil rating. Cek API key Google.'); break; }
+  }
+  save(); render(); toast(`${ok} tempat mendapat rating Google`);
+}
+
+/* Daftar tempat pilihan. */
 const CATALOG = {
   'phu-quoc': { label: 'Phu Quoc', place: 'Phu Quoc, Vietnam', items: [
     { title: 'Kiss Bridge (Cầu Hôn)', type: 'photo', location: 'Kiss Bridge, Sunset Town, Phu Quoc', note: 'Sunset ±17:45–18:15. Titik nonton Symphony of the Sea gratis.' },
@@ -656,6 +911,15 @@ function renderMore(t) {
     <div class="section-h"><h2>Kalkulator kurs</h2></div>
     ${renderRateCard(t, true)}
 
+    <div class="section-h"><h2>Berbagi dengan teman</h2></div>
+    <div class="card" style="padding:14px">
+      ${t.shareId ? `<div style="font-size:14.5px">Trip ini tersinkron. ${syncBadge(t)}</div>
+        <p class="muted" style="font-size:13px;margin:6px 0 12px">Setiap perubahan di HP mana pun yang sudah bergabung langsung muncul di HP lainnya. Perubahan saat offline dikirim begitu online.</p>
+        <div class="row"><button class="btn small" data-a="share">Bagikan link</button><button class="btn ghost small" data-a="stopShare" data-confirm>Berhenti sinkron di HP ini</button></div>`
+      : `<p style="font-size:14.5px;margin:0 0 12px">Buat link supaya teman bisa membuka dan mengubah trip ini dari HP-nya. Perubahan dari siapa pun langsung terlihat di semua HP.</p>
+        <button class="btn small" data-a="share">Bagikan trip ini</button>`}
+    </div>
+
     <div class="section-h"><h2>Data</h2></div>
     <div class="stack">
       <button class="btn ghost block" data-a="exportOpen">Salin cadangan trip ini</button>
@@ -680,9 +944,16 @@ function field(f) {
     const sel = f.cur || local;
     input = `<div class="money"><input id="${id}" name="${f.name}" type="number" inputmode="decimal" min="0" step="any" value="${esc(v || '')}" placeholder="0"><select name="${f.name}Cur" aria-label="Mata uang">${[...new Set([local, sel, 'IDR'])].map((k) => `<option ${k === sel ? 'selected' : ''}>${k}</option>`).join('')}</select></div>`;
   }
+  else if (f.type === 'place') {
+    const g = f.g || null;
+    input = `<div class="money" style="grid-template-columns:1fr auto"><input id="${id}" name="${f.name}" value="${esc(v)}" placeholder="${esc(f.placeholder || '')}" autocomplete="off" data-placeinput>
+      <button type="button" class="btn ghost small" data-a="placeSearch">Cari</button></div>
+      <input type="hidden" name="gplace" id="f-gplace" value="${esc(g ? JSON.stringify(g) : '')}">
+      <div id="placeResults" class="presults">${g ? placeChosen(g) : ''}</div>`;
+  }
   else if (f.type === 'ratings') input = `<div class="rgrid">${PLATFORMS.map(([k, l]) => `<label class="rcell"><span>${l}</span><input name="r_${k}" type="number" inputmode="decimal" min="0" max="5" step="0.1" placeholder="4.5" value="${esc((v && v[k]) || '')}"></label>`).join('')}</div>`;
   else input = `<input id="${id}" name="${f.name}" type="${f.type || 'text'}" value="${esc(v)}" placeholder="${esc(f.placeholder || '')}" ${req} ${f.type === 'number' ? 'inputmode="decimal" step="any" min="0"' : ''}>`;
-  const hint = f.hint ? '<small class="muted" style="font-size:12px">Paling akurat: di Google Maps pilih tempatnya, tekan Bagikan → Salin link, lalu tempel di sini.</small>' : '';
+  const hint = f.hint ? `<small class="muted" style="font-size:12px">${placesEnabled() ? 'Ketik nama tempat, pilihan dari Google muncul otomatis beserta rating dan link Maps-nya.' : 'Bisa juga tempel link dari Google Maps (Bagikan → Salin link).'}</small>` : '';
   return `<div class="f"><label for="${id}">${esc(f.label)}</label>${input}${hint}</div>`;
 }
 function openForm({ title, fields, submit = 'Simpan', onSubmit, onDelete }) {
@@ -718,6 +989,32 @@ function toast(msg) {
   el.textContent = msg; clearTimeout(toastTimer); toastTimer = setTimeout(() => el.remove(), 1800);
 }
 const num = (s) => { const n = parseFloat(String(s || '').replace(',', '.')); return isFinite(n) && n > 0 ? n : 0; };
+function readG(v) { try { return v.gplace ? JSON.parse(v.gplace) : null; } catch (e) { return null; } }
+function placeChosen(g) {
+  return `<div class="pchosen"><div class="main"><b>${esc(g.name)}</b><div class="sub">${esc(g.address)}</div>
+    ${g.rating ? `<div class="star num">${gRating(g)}</div>` : '<div class="sub">Belum ada rating di Google</div>'}</div>
+    <button type="button" class="x" data-a="placeClear" aria-label="Lepas pilihan">×</button></div>`;
+}
+let placeTimer = null, placeSeq = 0;
+async function runPlaceSearch(immediate) {
+  const inp = $('#f-location'); const box = $('#placeResults');
+  if (!inp || !box || !placesEnabled()) return;
+  const q = inp.value.trim() || ($('#f-title') ? $('#f-title').value.trim() : '');
+  if (q.length < 3 || isUrl(q)) return;
+  const seq = ++placeSeq;
+  box.innerHTML = '<div class="sub" style="padding:8px 2px">Mencari di Google…</div>';
+  try {
+    const t = trip();
+    const res = await searchPlaces(withPlace(q, t && t.place));
+    if (seq !== placeSeq) return;
+    box.innerHTML = res.length ? res.map((g, i) => `<button type="button" class="presult" data-a="placePick" data-i="${i}">
+        <b>${esc(g.name)}</b><span class="sub">${esc(g.address)}</span>${g.rating ? `<span class="star num">${gRating(g)}</span>` : ''}</button>`).join('')
+      : '<div class="sub" style="padding:8px 2px">Tidak ditemukan. Coba nama lain.</div>';
+    box._results = res;
+  } catch (e) {
+    if (seq === placeSeq) box.innerHTML = '<div class="sub" style="padding:8px 2px">Pencarian Google gagal. Cek internet atau API key.</div>';
+  }
+}
 function readRatings(v) {
   const r = {};
   PLATFORMS.forEach(([k]) => { const n = num(v['r_' + k]); if (n) r[k] = Math.min(5, Math.round(n * 10) / 10); });
@@ -725,14 +1022,21 @@ function readRatings(v) {
 }
 function reviewSheet(t, kind, x) {
   const links = reviewLinks(t, x);
-  const avg = ratingAvg(x);
-  openSheetHtml(`Review: ${x.title}`, `
-    ${avg ? `<div class="big" style="font-size:26px">★ ${avg.avg.toFixed(1).replace('.', ',')}</div><div class="muted" style="font-size:13px;margin-bottom:12px">Rata-rata dari ${avg.n} platform yang kamu catat</div>` : '<p class="muted" style="margin-top:0;font-size:14px">Buka tiap platform untuk melihat rating dan ulasannya, lalu catat angkanya di sini supaya bisa dibandingkan.</p>'}
-    <div class="card">${PLATFORMS.map(([k, l]) => `<div class="li"><div class="main"><div class="title">${l}</div>
-      <div class="sub">${x.ratings && x.ratings[k] ? `★ ${String(x.ratings[k]).replace('.', ',')}` : 'Belum dicatat'}</div></div>
+  const g = x.g;
+  const google = g && g.rating
+    ? `<div class="big" style="font-size:30px">★ ${g.rating.toFixed(1).replace('.', ',')}</div>
+       <div class="muted num" style="font-size:13px">${fmtN(g.count)} ulasan di Google · ${esc(g.name)}</div>`
+    : `<p class="muted" style="margin-top:0;font-size:14px">${placesEnabled() ? 'Rating Google belum diambil untuk tempat ini.' : 'Rating Google otomatis belum diaktifkan.'}</p>`;
+  openSheetHtml(`Review: ${x.title}`, `${google}
+    <div class="row" style="margin:12px 0 16px">
+      ${g && g.uri ? `<a class="btn small" href="${esc(g.uri)}" target="_blank" rel="noopener">Buka ulasan di Google Maps</a>` : ''}
+      ${placesEnabled() ? `<button class="btn ghost small" data-a="placeRefresh" data-kind="${kind}" data-id="${x.id}">${g ? 'Perbarui' : 'Ambil rating Google'}</button>` : `<button class="btn ghost small" data-a="setupHelp" data-k="places">Cara mengaktifkan</button>`}
+    </div>
+    <div class="muted" style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">Platform lain</div>
+    <div class="card">${PLATFORMS.filter(([k]) => k !== 'google').map(([k, l]) => `<div class="li"><div class="main"><div class="title">${l}</div>
+      <div class="sub">Rating dan harga paket di situsnya</div></div>
       <a class="btn ghost small" href="${esc(links[k])}" target="_blank" rel="noopener">Buka</a></div>`).join('')}</div>
-    <div class="foot" style="margin-top:14px"><button class="btn ghost" data-a="closeSheet">Tutup</button>
-      <button class="btn" data-a="${kind === 'items' ? 'editItem' : 'editPlace'}" data-id="${x.id}">Catat rating</button></div>`);
+    <div class="foot" style="margin-top:14px"><button class="btn" data-a="closeSheet">Tutup</button></div>`);
 }
 const dayOptions = (t) => dayRange(t.start, t.end).map((d, i) => [d, `Hari ${i + 1} · ${dayLabel(d)}`]);
 
@@ -772,13 +1076,12 @@ function itemForm(t, it, day) {
       { name: 'day', label: 'Hari', type: 'select', options: days, value: it?.day || day || days[0]?.[0], half: true },
       { name: 'time', label: 'Jam', type: 'time', value: it?.time, half: true },
       { name: 'type', label: 'Jenis', type: 'select', options: ITEM_TYPES, value: it?.type || 'activity' },
-      { name: 'location', label: 'Lokasi: alamat, nama tempat, atau link Google Maps', value: it?.location, placeholder: 'Kiss Bridge, Sunset Town, Phu Quoc', hint: true },
+      { name: 'location', label: 'Lokasi', type: 'place', value: it?.location, g: it?.g, placeholder: 'Kiss Bridge', hint: true },
       { name: 'note', label: 'Catatan', type: 'textarea', value: it?.note, placeholder: 'Tips, jam buka, apa yang dibawa…' },
       { name: 'cost', label: 'Perkiraan biaya', type: 'money', value: it?.cost, cur: it?.cur },
-      { name: 'ratings', label: 'Rating dari tiap platform (0–5, opsional)', type: 'ratings', value: it?.ratings },
     ],
     onSubmit(v) {
-      const data = { title: v.title, day: v.day, time: v.time, type: v.type, location: v.location, note: v.note, cost: num(v.cost), cur: v.costCur || t.cur, ratings: readRatings(v) };
+      const data = { title: v.title, day: v.day, time: v.time, type: v.type, location: v.location, note: v.note, cost: num(v.cost), cur: v.costCur || t.cur, g: readG(v) };
       if (isNew) t.items.push(Object.assign({ id: uid(), done: false }, data, { order: insertOrder(t, v.day, v.time) }));
       else { const moved = it.day !== v.day; Object.assign(it, data); if (moved) it.order = insertOrder(t, v.day, v.time, it.id); }
     },
@@ -804,12 +1107,11 @@ function placeForm(t, p) {
     fields: [
       { name: 'title', label: 'Nama tempat', value: p?.title, placeholder: 'Khem Beach', required: true },
       { name: 'type', label: 'Jenis', type: 'select', options: ITEM_TYPES, value: p?.type || 'activity' },
-      { name: 'location', label: 'Lokasi: alamat, nama tempat, atau link Google Maps', value: p?.location, hint: true },
+      { name: 'location', label: 'Lokasi', type: 'place', value: p?.location, g: p?.g, placeholder: 'Khem Beach', hint: true },
       { name: 'note', label: 'Catatan', type: 'textarea', value: p?.note },
-      { name: 'ratings', label: 'Rating dari tiap platform (0–5, opsional)', type: 'ratings', value: p?.ratings },
     ],
     onSubmit(v) {
-      const data = { title: v.title, type: v.type, location: v.location, note: v.note, ratings: readRatings(v) };
+      const data = { title: v.title, type: v.type, location: v.location, note: v.note, g: readG(v) };
       if (isNew) t.places.push(Object.assign({ id: uid() }, data)); else Object.assign(p, data);
     },
     onDelete: isNew ? null : () => { t.places = t.places.filter((x) => x.id !== p.id); },
@@ -931,7 +1233,11 @@ function doImport() {
   try { data = JSON.parse($('#importText').value); } catch (e) { toast('Teks cadangan tidak terbaca'); return; }
   const incoming = data && data.trip ? [data.trip] : data && Array.isArray(data.trips) ? data.trips : null;
   if (!incoming || !incoming.length || !incoming.every((t) => t && Array.isArray(t.items))) { toast('Format cadangan tidak dikenali'); return; }
-  incoming.forEach((t) => { const nt = newTrip(Object.assign({}, t, { id: uid() })); state.trips.push(nt); state.activeTripId = nt.id; });
+  incoming.forEach((t) => {
+    const nt = newTrip(Object.assign({}, t, { id: uid() }));
+    delete nt.shareId; delete nt.joining; // cadangan menjadi trip lokal biasa; bagikan ulang jika perlu
+    state.trips.push(nt); state.activeTripId = nt.id;
+  });
   state.tab = 'plan'; closeSheet(); save(); render(); toast('Trip dipulihkan');
 }
 async function copyText(text, el) {
@@ -1036,9 +1342,35 @@ const actions = {
   placeCity(d) { state.placeCity = d.k; save(); render(); },
   saveCatalog(d) {
     const c = CATALOG[d.city] && CATALOG[d.city].items[+d.i]; if (!c) return;
-    trip().places.push({ id: uid(), title: c.title, type: c.type, location: c.location, note: c.note, ratings: {} });
+    const g = catG(c);
+    trip().places.push({ id: uid(), title: c.title, type: c.type, location: c.location, note: c.note, g: g && g.pid ? g : null });
     save(); render(); toast('Tersimpan di Tempat simpanan');
   },
+  fillRatings() { fillRatings(trip()); },
+  setupHelp(d) { openSheetHtml(d.k === 'sync' ? 'Aktifkan berbagi trip' : 'Aktifkan rating Google', setupHelp(d.k)); },
+  placeSearch() { runPlaceSearch(true); },
+  placePick(d, el) {
+    const box = $('#placeResults'); const g = box && box._results && box._results[+d.i]; if (!g) return;
+    $('#f-gplace').value = JSON.stringify(g);
+    const title = $('#f-title'); if (title && !title.value.trim()) title.value = g.name;
+    $('#f-location').value = [g.name, g.address].filter(Boolean).join(', ');
+    box.innerHTML = placeChosen(g);
+  },
+  placeClear() { $('#f-gplace').value = ''; $('#placeResults').innerHTML = ''; },
+  async placeRefresh(d) {
+    const t = trip(); const x = find(t[d.kind], d.id); if (!x) return;
+    try {
+      placeCache.clear();
+      const res = await searchPlaces(x.g && x.g.name ? withPlace(x.g.name, t.place) : withPlace(isUrl(x.location) || !x.location ? x.title : x.location, t.place));
+      if (res[0]) { x.g = res[0]; save(); render(); reviewSheet(t, d.kind, x); toast('Rating diperbarui'); } else toast('Tempat tidak ditemukan di Google');
+    } catch (e) { toast('Gagal mengambil rating'); }
+  },
+  share() { const t = trip(); if (t.shareId) shareSheet(t); else enableShare(t); },
+  copyShare() { copyText($('#shareText').value, $('#shareText')); },
+  nativeShare() { const t = trip(); navigator.share({ title: t.name, text: `Rencana trip ${t.name}`, url: shareUrl(t) }).catch(() => {}); },
+  stopShare() { const t = trip(); unsubscribe(t.shareId); delete t.shareId; delete syncState[t.id]; save(true); render(); toast('Trip ini tidak lagi disinkron di HP ini'); },
+  joinOpen() { joinSheet(); },
+  doJoin() { joinTrip($('#joinCode').value); },
   refreshRates() { refreshRates(true); toast('Mengambil kurs terbaru…'); },
   install() {
     if (installEvt) { installEvt.prompt(); installEvt.userChoice.finally(() => { installEvt = null; render(); }); }
@@ -1103,6 +1435,10 @@ document.addEventListener('input', (e) => {
     if (e.target.dataset.conv === 'local') $('#cvIdr').value = v ? Math.round(v * r) : '';
     else $('#cvLocal').value = v ? +(v / r).toFixed(t.cur === 'VND' || t.cur === 'KRW' || t.cur === 'JPY' ? 0 : 2) : '';
   }
+  if (e.target.matches('[data-placeinput]') || (e.target.id === 'f-title' && $('#f-location') && !$('#f-location').value.trim())) {
+    if (e.target.matches('[data-placeinput]')) { const h = $('#f-gplace'); if (h) h.value = ''; }
+    clearTimeout(placeTimer); placeTimer = setTimeout(runPlaceSearch, 800);
+  }
   if (e.target.matches('[data-explore]')) {
     exploreQuery = e.target.value;
     const pos = e.target.selectionStart;
@@ -1126,9 +1462,34 @@ function installHelp() {
     <div class="foot"><button class="btn" data-a="closeSheet">Oke</button></div>`;
 }
 
-window.addEventListener('online', () => refreshRates(false));
+function setupHelp(kind) {
+  const body = kind === 'sync'
+    ? `<p>Fitur berbagi butuh database gratis dari Firebase (Google). Pemilik aplikasi perlu menyiapkannya sekali:</p>
+       <ol style="padding-left:20px"><li>Buat proyek di console.firebase.google.com.</li><li>Aktifkan Authentication → Anonymous, dan Firestore Database.</li>
+       <li>Salin konfigurasi web app ke file <code class="code">config.js</code> di GitHub.</li></ol><p class="muted">Langkah lengkap ada di README repository.</p>`
+    : `<p>Rating dan link Google Maps otomatis butuh API key Google Maps Platform. Gratis sampai 1.000 pencarian rating per bulan, tapi Google meminta kartu untuk akun billing.</p>
+       <ol style="padding-left:20px"><li>Buat API key di console.cloud.google.com, aktifkan Maps JavaScript API dan Places API (New).</li>
+       <li>Batasi key hanya untuk situs aplikasi ini.</li><li>Tempel key ke <code class="code">config.js</code> di GitHub.</li></ol><p class="muted">Langkah lengkap ada di README repository.</p>`;
+  return `<div style="font-size:14.5px;line-height:1.6">${body}</div><div class="foot"><button class="btn" data-a="closeSheet">Oke</button></div>`;
+}
+
+function handleHash() {
+  const m = location.hash.match(/^#gabung-([a-z0-9]{16,})$/i);
+  if (!m) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  joinTrip(m[1]);
+}
+window.addEventListener('hashchange', handleHash);
+window.addEventListener('online', () => {
+  refreshRates(false);
+  if (fb && fb.auth && !fb.auth.currentUser) fb.authM.signInAnonymously(fb.auth).catch(() => {});
+  startSync(); render();
+});
+window.addEventListener('offline', () => render());
 render();
 refreshRates(false);
+startSync();
+handleHash();
 
 // Offline & pasang ke layar utama: hanya aktif saat di-hosting sebagai situs biasa (https).
 try {

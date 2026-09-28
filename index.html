@@ -1,0 +1,1140 @@
+<title>Jalan Trip Planner</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0F6E56">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Jalan">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap">
+<style>
+:root{
+  --bg:#F2F5F3; --surface:#FFFFFF; --sunk:#E7EDEA; --ink:#13231F; --muted:#56675F; --line:#D6E0DB;
+  --jade:#0F6E56; --jade-ink:#FFFFFF; --jade-soft:#DDF1E9;
+  --sea:#185FA5; --sea-soft:#E3EEFA; --amber:#A65A0B; --amber-soft:#FCEEDD;
+  --rose:#A3245A; --rose-soft:#FBE6EF; --violet:#534AB7; --violet-soft:#EEEDFE;
+  --shadow:0 8px 30px rgba(19,35,31,.12);
+  --sans:"Be Vietnam Pro",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#0D1513; --surface:#15201D; --sunk:#1B2926; --ink:#E4ECE9; --muted:#9CB0A9; --line:#293A35;
+    --jade:#4CC7A0; --jade-ink:#07261D; --jade-soft:#123329;
+    --sea:#7AB0E6; --sea-soft:#12263A; --amber:#E8A55A; --amber-soft:#35250F;
+    --rose:#EE89B4; --rose-soft:#38172A; --violet:#A9A3F0; --violet-soft:#22204A;
+    --shadow:0 8px 30px rgba(0,0,0,.45);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0D1513; --surface:#15201D; --sunk:#1B2926; --ink:#E4ECE9; --muted:#9CB0A9; --line:#293A35;
+  --jade:#4CC7A0; --jade-ink:#07261D; --jade-soft:#123329;
+  --sea:#7AB0E6; --sea-soft:#12263A; --amber:#E8A55A; --amber-soft:#35250F;
+  --rose:#EE89B4; --rose-soft:#38172A; --violet:#A9A3F0; --violet-soft:#22204A;
+  --shadow:0 8px 30px rgba(0,0,0,.45);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5;-webkit-tap-highlight-color:transparent}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--jade);outline-offset:2px}
+.wrap{max-width:560px;margin:0 auto;padding-inline:16px;padding-block:0 110px}
+
+/* header */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding:14px 0 10px;display:flex;align-items:center;gap:10px}
+.top h1{font-size:20px;font-weight:800;margin:0;letter-spacing:-.01em;line-height:1.2;text-wrap:balance}
+.top .sub{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.top .grow{flex:1;min-width:0}
+.iconbtn{border:1px solid var(--line);background:var(--surface);border-radius:10px;min-width:38px;height:38px;padding:0 10px;font-weight:600;font-size:14px}
+.brand{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--jade)}
+
+/* generic */
+.btn{border:none;background:var(--jade);color:var(--jade-ink);font-weight:700;border-radius:12px;padding:11px 16px;font-size:15px}
+.btn.ghost{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
+.btn.small{padding:7px 12px;font-size:13.5px;border-radius:10px}
+.btn.danger{background:var(--amber-soft);color:var(--amber)}
+.btn.block{width:100%}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.muted{color:var(--muted)}
+.num{font-variant-numeric:tabular-nums}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px}
+.section-h{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:22px 0 10px}
+.section-h h2{font-size:16px;margin:0;font-weight:700}
+.empty{border:1.5px dashed var(--line);border-radius:14px;padding:22px 16px;text-align:center;color:var(--muted);font-size:14px}
+.pill{display:inline-block;font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.t-activity{background:var(--sea-soft);color:var(--sea)}
+.t-food{background:var(--amber-soft);color:var(--amber)}
+.t-transport{background:var(--sunk);color:var(--ink)}
+.t-stay{background:var(--violet-soft);color:var(--violet)}
+.t-photo{background:var(--rose-soft);color:var(--rose)}
+.t-other{background:var(--sunk);color:var(--muted)}
+.s-todo{background:var(--amber-soft);color:var(--amber)}
+.s-booked{background:var(--sea-soft);color:var(--sea)}
+.s-confirmed{background:var(--jade-soft);color:var(--jade)}
+
+/* trips list */
+.trip{display:block;width:100%;text-align:left;padding:0;overflow:hidden;border:1px solid var(--line);background:var(--surface);border-radius:16px}
+.trip .band{height:10px}
+.trip .in{padding:14px 16px 16px}
+.trip h3{margin:0 0 2px;font-size:18px;font-weight:800}
+.trip .meta{display:flex;justify-content:space-between;gap:8px;font-size:13px;color:var(--muted)}
+.count{font-weight:700;color:var(--jade)}
+.stack{display:flex;flex-direction:column;gap:10px}
+
+/* day strip */
+.strip{display:flex;gap:8px;overflow-x:auto;margin:0 -16px;padding:2px 16px 8px;scrollbar-width:none}
+.strip::-webkit-scrollbar{display:none}
+.strip button{flex:0 0 auto;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:6px 10px;text-align:center;line-height:1.2}
+.strip b{display:block;font-size:15px}
+.strip span{font-size:11px;color:var(--muted)}
+
+/* day */
+.day{margin-top:18px;scroll-margin-top:70px}
+.dayhead{display:flex;align-items:flex-start;gap:10px;padding:4px 0 10px}
+.dayhead .d{flex:1;min-width:0}
+.dayhead h2{margin:0;font-size:17px;font-weight:800;line-height:1.25}
+.dayhead .k{font-size:12px;font-weight:700;color:var(--jade);letter-spacing:.06em;text-transform:uppercase}
+.dayhead .m{font-size:12.5px;color:var(--muted)}
+.tl{display:flex;flex-direction:column}
+.it{display:grid;grid-template-columns:48px 1fr;gap:10px;position:relative}
+.it .time{font-size:12.5px;font-weight:700;color:var(--muted);text-align:right;padding-top:12px;font-variant-numeric:tabular-nums}
+.it .body{border-left:2px solid var(--line);padding:0 0 10px 12px;position:relative;min-width:0}
+.it .body::before{content:"";position:absolute;left:-7px;top:14px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:2px solid var(--jade)}
+.it.done .body::before{background:var(--jade)}
+.it.done .title{text-decoration:line-through;color:var(--muted)}
+.itcard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer}
+.itcard .title{font-weight:700;font-size:15px;line-height:1.3;margin:4px 0 2px;overflow-wrap:anywhere}
+.itcard .loc{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.itcard .note{font-size:13px;margin-top:6px;white-space:pre-wrap;overflow-wrap:anywhere}
+.itcard .cost{font-size:12.5px;font-weight:600;color:var(--muted);margin-top:4px}
+.acts{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.acts button,.acts a{font-size:12.5px;font-weight:600;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:4px 9px;color:var(--ink);text-decoration:none}
+.acts a.go{background:var(--jade);border-color:var(--jade);color:var(--jade-ink)}
+.acts button:disabled{color:var(--muted);cursor:default}
+.star{display:inline-block;font-size:13px;font-weight:700;color:var(--amber);margin-top:2px}
+.star small{font-weight:500;color:var(--muted);font-size:12px}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 14px;font-weight:600;font-size:14px}
+.chip[aria-pressed="true"]{background:var(--jade);border-color:var(--jade);color:var(--jade-ink)}
+.maplink{display:block;text-align:center;text-decoration:none}
+.rgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}
+.rcell{display:flex;flex-direction:column;gap:3px;font-size:12px;font-weight:600;color:var(--muted)}
+.rcell input{padding:8px 10px}
+.ratetbl{display:grid;grid-template-columns:1fr auto;gap:4px 12px;margin-top:12px;font-size:13.5px;border-top:1px solid var(--line);padding-top:10px}
+.ratetbl b{text-align:right}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.resv{border:1px dashed var(--line);border-radius:12px;padding:8px 12px;margin:0 0 10px 58px;font-size:13.5px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.add{margin-left:58px}
+.addbtn{width:100%;border:1.5px dashed var(--line);background:transparent;border-radius:12px;padding:9px;font-weight:600;color:var(--jade)}
+
+/* lists */
+.li{padding:12px 14px;display:flex;gap:12px;align-items:flex-start;border-bottom:1px solid var(--line)}
+.li:last-child{border-bottom:none}
+.li .main{flex:1;min-width:0}
+.li .title{font-weight:700;overflow-wrap:anywhere}
+.li .sub{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.code{font-family:ui-monospace,Consolas,monospace;font-size:13px;background:var(--sunk);padding:1px 6px;border-radius:5px}
+
+/* budget */
+.big{font-size:28px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.1}
+.bar{height:8px;border-radius:99px;background:var(--sunk);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--jade);border-radius:99px}
+.bar.over i{background:var(--amber)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{padding:12px 14px}
+.stat .l{font-size:12px;color:var(--muted);font-weight:600}
+.stat .v{font-size:18px;font-weight:800;font-variant-numeric:tabular-nums}
+
+/* checklist */
+.chk{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.chk:last-child{border-bottom:none}
+.chk input{width:20px;height:20px;accent-color:var(--jade);flex:0 0 auto}
+.chk label{flex:1;overflow-wrap:anywhere}
+.chk.on label{text-decoration:line-through;color:var(--muted)}
+.x{border:none;background:none;color:var(--muted);font-size:18px;line-height:1;padding:4px 6px}
+
+/* tabbar */
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+.tabs .in{max-width:560px;margin:0 auto;display:flex}
+.tabs button{flex:1;border:none;background:none;padding:10px 2px 11px;font-size:12px;font-weight:600;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:3px}
+.tabs button svg{width:22px;height:22px}
+.tabs button[aria-current="page"]{color:var(--jade)}
+.fab{position:fixed;right:max(16px,calc(50% - 264px));bottom:calc(76px + env(safe-area-inset-bottom,0px));z-index:6;border:none;background:var(--jade);color:var(--jade-ink);font-weight:800;border-radius:16px;padding:14px 18px;box-shadow:var(--shadow);font-size:15px}
+
+/* sheet */
+.scrim{position:fixed;inset:0;background:rgba(8,16,14,.45);z-index:20;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--surface);width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:20px 20px 0 0;padding:8px 16px calc(20px + env(safe-area-inset-bottom,0px));box-shadow:var(--shadow)}
+.grab{width:40px;height:4px;border-radius:9px;background:var(--line);margin:4px auto 10px}
+.sheet h2{font-size:18px;margin:0 0 14px;font-weight:800}
+.f{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.f label{font-size:12.5px;font-weight:700;color:var(--muted)}
+.f input,.f select,.f textarea{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:10px 12px;font-size:16px}
+.f textarea{min-height:84px;resize:vertical}
+.f2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.money{display:grid;grid-template-columns:1fr 92px;gap:8px}
+.sheet .foot{display:flex;gap:8px;margin-top:6px}
+.sheet .foot .btn{flex:1}
+.toast{position:fixed;left:50%;bottom:calc(140px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:99px;font-size:14px;font-weight:600;z-index:30}
+.warnbar{background:var(--amber-soft);color:var(--ink);border-radius:12px;padding:10px 12px;font-size:13.5px;margin-top:10px}
+textarea.io{width:100%;min-height:140px;font-family:ui-monospace,Consolas,monospace;font-size:12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:10px}
+@media (max-width:360px){.f2{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translateY(24px);opacity:.6}to{transform:none;opacity:1}}}
+</style>
+
+<div class="wrap" id="app"></div>
+<nav class="tabs" id="tabs" hidden></nav>
+<div id="sheetRoot"></div>
+
+<script>
+(() => {
+'use strict';
+
+/* ---------- utilities ---------- */
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
+const nf = new Intl.NumberFormat('id-ID');
+const fmtN = (n) => nf.format(Math.round(n || 0));
+
+const WDL = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+const WD = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+const parseD = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)); };
+const fmtD = (d) => d.toISOString().slice(0, 10);
+const addDays = (s, n) => { const d = parseD(s); d.setUTCDate(d.getUTCDate() + n); return fmtD(d); };
+const todayStr = () => { const n = new Date(); return fmtD(new Date(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()))); };
+const diffDays = (a, b) => Math.round((parseD(b) - parseD(a)) / 86400000);
+function dayRange(start, end) {
+  if (!start || !end || end < start) return start ? [start] : [];
+  const out = []; let d = start;
+  while (d <= end && out.length < 60) { out.push(d); d = addDays(d, 1); }
+  return out;
+}
+const dayLabel = (s) => { const d = parseD(s); return `${WDL[d.getUTCDay()]}, ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`; };
+const shortDate = (s) => { const d = parseD(s); return `${d.getUTCDate()} ${MON[d.getUTCMonth()]}`; };
+function rangeLabel(a, b) {
+  if (!a) return '';
+  const A = parseD(a), B = parseD(b || a);
+  const y = B.getUTCFullYear();
+  if (a === b || !b) return `${A.getUTCDate()} ${MON[A.getUTCMonth()]} ${y}`;
+  if (A.getUTCMonth() === B.getUTCMonth()) return `${A.getUTCDate()}–${B.getUTCDate()} ${MON[B.getUTCMonth()]} ${y}`;
+  return `${A.getUTCDate()} ${MON[A.getUTCMonth()]} – ${B.getUTCDate()} ${MON[B.getUTCMonth()]} ${y}`;
+}
+
+/* ---------- constants ---------- */
+const ITEM_TYPES = [['activity', 'Aktivitas'], ['food', 'Makan'], ['transport', 'Transport'], ['stay', 'Penginapan'], ['photo', 'Spot foto'], ['other', 'Lainnya']];
+const BOOK_KINDS = [['flight', 'Penerbangan'], ['stay', 'Penginapan'], ['ticket', 'Tiket/aktivitas'], ['transport', 'Transport'], ['food', 'Restoran'], ['other', 'Lainnya']];
+const BOOK_STATUS = [['todo', 'Belum dipesan'], ['booked', 'Sudah dipesan'], ['confirmed', 'Terkonfirmasi']];
+const EXP_CATS = [['food', 'Makan'], ['transport', 'Transport'], ['stay', 'Penginapan'], ['activity', 'Aktivitas & tiket'], ['shopping', 'Belanja'], ['other', 'Lainnya']];
+const CURRENCIES = [['VND', 'Dong Vietnam (VND)', '₫'], ['THB', 'Baht Thailand (THB)', '฿'], ['SGD', 'Dolar Singapura (SGD)', 'S$'], ['MYR', 'Ringgit Malaysia (MYR)', 'RM'],
+  ['JPY', 'Yen Jepang (JPY)', '¥'], ['KRW', 'Won Korea (KRW)', '₩'], ['CNY', 'Yuan Tiongkok (CNY)', 'CN¥'], ['PHP', 'Peso Filipina (PHP)', '₱'],
+  ['USD', 'Dolar AS (USD)', 'US$'], ['EUR', 'Euro (EUR)', '€'], ['AUD', 'Dolar Australia (AUD)', 'A$'], ['SAR', 'Riyal Saudi (SAR)', 'SR']];
+const SYMBOL = Object.fromEntries(CURRENCIES.map((c) => [c[0], c[2]]));
+const COLORS = ['#0F6E56', '#185FA5', '#A65A0B', '#A3245A', '#534AB7', '#2F7D8C'];
+const label = (list, v) => (list.find((x) => x[0] === v) || [v, v])[1];
+const PLATFORMS = [['google', 'Google Maps'], ['klook', 'Klook'], ['tripadvisor', 'Tripadvisor'], ['kkday', 'KKday'], ['traveloka', 'Traveloka']];
+const fold = (s) => String(s || '').toLowerCase().replace(/đ/g, 'd').normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+/* ---------- state & storage ---------- */
+const KEY = 'jalan-trip.v1';
+/*
+ * rates:  kurs otomatis { VND: { idr: 0.692, at: <unix detik>, fetched: <ms> } } dari ExchangeRate-API (update harian).
+ * manual: kurs isian sendiri { VND: 0.69 }, dipakai jika useManual[cur] true atau kurs otomatis belum pernah didapat.
+ */
+const blank = () => ({ v: 1, trips: [], activeTripId: null, tab: 'plan', rates: {}, manual: {}, useManual: {}, placeCity: 'phu-quoc' });
+let storageOk = true;
+function load() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) {
+      const s = Object.assign(blank(), JSON.parse(raw));
+      if (s.v === 1 && Array.isArray(s.trips)) {
+        if (s.rate && !s.manual.VND) { s.manual.VND = s.rate; delete s.rate; } // data versi awal
+        s.trips.forEach((t) => { t.cur = t.cur || 'VND'; });
+        return s;
+      }
+    }
+  } catch (e) { storageOk = false; }
+  return blank();
+}
+let state = load();
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(state)); storageOk = true; } catch (e) { storageOk = false; }
+}
+const trip = () => state.trips.find((t) => t.id === state.activeTripId) || null;
+
+/* ---------- kurs ---------- */
+let rateStatus = {}; // cur -> 'loading' | 'ok' | 'fail'
+function rateInfo(cur) {
+  if (cur === 'IDR') return { value: 1, source: 'idr' };
+  const auto = state.rates[cur], man = state.manual[cur];
+  if (man && (state.useManual[cur] || !auto)) return { value: man, source: 'manual' };
+  if (auto) return { value: auto.idr, source: 'auto', at: auto.at };
+  return { value: 0, source: 'none' };
+}
+const rateOf = (cur) => rateInfo(cur).value;
+const idr = (amount, cur) => (cur === 'IDR' ? amount : amount * rateOf(cur));
+const money = (amount, cur) => (cur === 'IDR' ? `Rp${fmtN(amount)}` : `${fmtN(amount)} ${SYMBOL[cur] || cur}`);
+function moneyBoth(amount, cur) {
+  if (!amount) return '';
+  if (cur === 'IDR') return money(amount, 'IDR');
+  const r = rateOf(cur);
+  if (!r) return money(amount, cur);
+  const v = idr(amount, cur);
+  return `${money(amount, cur)} · ±Rp${fmtN(v >= 10000 ? Math.round(v / 1000) * 1000 : v)}`;
+}
+const fmtRate = (v) => (v >= 100 ? fmtN(v) : v.toLocaleString('id-ID', { maximumFractionDigits: 4 }));
+function rateAge(at) {
+  if (!at) return '';
+  const d = new Date(at * 1000);
+  return `${d.getDate()} ${MON[d.getMonth()]} ${d.getFullYear()}, ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+// Ambil kurs terbaru: saat aplikasi dibuka, saat kembali online, dan tiap 3 jam jika data lebih tua dari itu.
+async function refreshRates(force) {
+  const curs = [...new Set(state.trips.map((t) => t.cur || 'VND').concat(trip() ? [trip().cur] : []))].filter((c) => c && c !== 'IDR');
+  if (!curs.length) curs.push('VND');
+  let changed = false;
+  await Promise.all(curs.map(async (cur) => {
+    const old = state.rates[cur];
+    if (!force && old && Date.now() - old.fetched < 3 * 3600 * 1000) return;
+    rateStatus[cur] = 'loading';
+    try {
+      const res = await fetch(`https://open.er-api.com/v6/latest/${cur}`, { cache: 'no-store' });
+      const j = await res.json();
+      if (j.result !== 'success' || !j.rates || !j.rates.IDR) throw new Error('bad');
+      state.rates[cur] = { idr: j.rates.IDR, at: j.time_last_update_unix, fetched: Date.now() };
+      rateStatus[cur] = 'ok'; changed = true;
+    } catch (e) { rateStatus[cur] = 'fail'; }
+  }));
+  if (changed) save();
+  render();
+}
+function rateLine(cur) {
+  const r = rateInfo(cur);
+  const st = rateStatus[cur];
+  if (r.source === 'auto') return `Kurs pasar ${rateAge(r.at)} · ExchangeRate-API${st === 'loading' ? ' · memperbarui…' : ''}`;
+  if (r.source === 'manual') return state.useManual[cur] ? 'Kurs isian sendiri' : 'Kurs isian sendiri (kurs otomatis belum bisa diambil)';
+  if (st === 'loading') return 'Mengambil kurs terbaru…';
+  return 'Kurs otomatis belum tersedia. Butuh internet, atau isi kurs sendiri di Budget.';
+}
+function newTrip(data) {
+  return Object.assign({
+    id: uid(), name: '', place: '', start: todayStr(), end: addDays(todayStr(), 2), cur: 'VND',
+    color: COLORS[state.trips.length % COLORS.length], budgetIdr: 0, notes: '',
+    items: [], places: [], bookings: [], expenses: [], checklist: [],
+  }, data);
+}
+
+/* ---------- maps links ---------- */
+// Lokasi boleh berupa alamat/nama tempat, atau link yang disalin dari Google Maps (Bagikan → Salin link).
+const isUrl = (s) => /^https?:\/\//i.test(String(s || '').trim());
+const mapsQuery = (t, x) => (x.location && !isUrl(x.location) ? x.location : [x.title, t.place].filter(Boolean).join(', '));
+const mapsSearch = (q) => 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q);
+const mapsOpen = (t, x) => (isUrl(x.location) ? x.location.trim() : mapsSearch(mapsQuery(t, x)));
+// Tanpa origin → Google Maps memakai posisi HP saat ini.
+const mapsNav = (t, x) => 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + encodeURIComponent(mapsQuery(t, x));
+function reviewLinks(t, x) {
+  const name = [x.title, (t && t.place) || x.city || ''].filter(Boolean).join(' ');
+  const site = (d) => 'https://www.google.com/search?q=' + encodeURIComponent(`site:${d} ${name}`);
+  return {
+    google: isUrl(x.location) ? x.location.trim() : mapsSearch(name),
+    klook: site('klook.com'), tripadvisor: site('tripadvisor.com'), kkday: site('kkday.com'), traveloka: site('traveloka.com'),
+  };
+}
+function ratingAvg(x) {
+  const vals = PLATFORMS.map(([k]) => x.ratings && x.ratings[k]).filter((v) => v > 0 && v <= 5);
+  return vals.length ? { avg: vals.reduce((s, v) => s + v, 0) / vals.length, n: vals.length } : null;
+}
+const stars = (x) => { const r = ratingAvg(x); return r ? `<span class="star num">★ ${r.avg.toFixed(1).replace('.', ',')}<small> · ${r.n} platform</small></span>` : ''; };
+function mapsRoute(stops) {
+  if (stops.length < 2) return null;
+  const enc = encodeURIComponent;
+  const mid = stops.slice(1, -1).slice(0, 8);
+  let u = `https://www.google.com/maps/dir/?api=1&origin=${enc(stops[0])}&destination=${enc(stops[stops.length - 1])}`;
+  if (mid.length) u += `&waypoints=${mid.map(enc).join('%7C')}`;
+  return u;
+}
+
+/* ---------- icons ---------- */
+const ICON = {
+  plan: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2v4M16 2v4M7 13h4M7 17h7"/></svg>',
+  places: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-12a7 7 0 0 1 14 0c0 5.8-7 12-7 12z"/><circle cx="12" cy="9" r="2.5"/></svg>',
+  bookings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4z"/><path d="M14 6v12" stroke-dasharray="2 2"/></svg>',
+  budget: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="3"/><path d="M2 10h20M16 15h2"/></svg>',
+  more: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l2 2 4-4"/><rect x="3" y="3" width="18" height="18" rx="4"/></svg>',
+};
+
+/* ---------- rendering ---------- */
+const app = $('#app'), tabsEl = $('#tabs'), sheetRoot = $('#sheetRoot');
+
+function render() {
+  const t = trip();
+  if (!t) {
+    tabsEl.hidden = true;
+    app.innerHTML = renderTrips();
+  } else {
+    tabsEl.hidden = false;
+    tabsEl.innerHTML = `<div class="in">${[['plan', 'Rencana'], ['places', 'Tempat'], ['bookings', 'Booking'], ['budget', 'Budget'], ['more', 'Lainnya']]
+      .map(([k, l]) => `<button data-a="tab" data-k="${k}" ${state.tab === k ? 'aria-current="page"' : ''}>${ICON[k]}${l}</button>`).join('')}</div>`;
+    const views = { plan: renderPlan, places: renderPlaces, bookings: renderBookings, budget: renderBudget, more: renderMore };
+    app.innerHTML = renderTripHeader(t) + (views[state.tab] || renderPlan)(t) + renderFab();
+  }
+}
+
+function storageWarning() {
+  return storageOk ? '' : '<div class="warnbar">Penyimpanan browser tidak tersedia di tampilan ini. Data hanya bertahan sampai halaman ditutup. Salin cadangan dari tab Lainnya.</div>';
+}
+
+function renderTrips() {
+  const list = [...state.trips].sort((a, b) => (a.start || '').localeCompare(b.start || ''));
+  const today = todayStr();
+  return `
+    <header class="top"><div class="grow"><div class="brand">Jalan</div><h1>Trip saya</h1></div></header>
+    ${storageWarning()}
+    <div class="stack">
+      ${list.length ? list.map((t) => {
+        const n = dayRange(t.start, t.end).length;
+        const until = t.start ? diffDays(today, t.start) : null;
+        const tag = until == null ? '' : until > 0 ? `H-${until}` : (t.end && diffDays(today, t.end) >= 0 ? 'Sedang berjalan' : 'Selesai');
+        return `<button class="trip" data-a="open" data-id="${t.id}">
+          <div class="band" style="background:${esc(t.color)}"></div>
+          <div class="in"><h3>${esc(t.name || 'Tanpa nama')}</h3>
+            <div class="meta"><span>${esc(t.place)}${t.place ? ' · ' : ''}${rangeLabel(t.start, t.end)} · ${n} hari</span><span class="count">${tag}</span></div>
+          </div></button>`;
+      }).join('') : `<div class="empty">Belum ada trip. Buat trip baru, lalu isi rencana harian, tempat, booking, dan pengeluaran sendiri.</div>`}
+      <button class="btn block" data-a="newTrip">+ Trip baru</button>
+      <button class="btn ghost block" data-a="template">Mulai dari contoh: Phu Quoc 4 hari</button>
+      <button class="btn ghost block" data-a="importOpen">Pulihkan dari cadangan</button>
+      ${standalone() ? '' : `<button class="btn ghost block" data-a="install">${installEvt ? 'Pasang aplikasi di HP ini' : 'Cara pasang di HP'}</button>`}
+    </div>`;
+}
+
+function renderTripHeader(t) {
+  return `<header class="top">
+    <button class="iconbtn" data-a="home" aria-label="Semua trip">←</button>
+    <div class="grow"><h1>${esc(t.name || 'Trip')}</h1><div class="sub">${esc(t.place)}${t.place ? ' · ' : ''}${rangeLabel(t.start, t.end)}</div></div>
+    <button class="iconbtn" data-a="editTrip" aria-label="Ubah trip">Ubah</button>
+  </header>${storageWarning()}`;
+}
+
+function renderFab() {
+  const map = { plan: ['addItem', '+ Aktivitas'], places: ['addPlace', '+ Tempat'], bookings: ['addBooking', '+ Booking'], budget: ['addExpense', '+ Pengeluaran'], more: ['addCheck', '+ Checklist'] };
+  const [a, l] = map[state.tab] || map.plan;
+  return `<button class="fab" data-a="${a}">${l}</button>`;
+}
+
+const sortItems = (arr) => [...arr].sort((a, b) => a.order - b.order);
+
+function renderPlan(t) {
+  const days = dayRange(t.start, t.end);
+  const orphan = t.items.filter((i) => !days.includes(i.day));
+  const strip = `<div class="strip">${days.map((d, i) => {
+    const D = parseD(d);
+    return `<button data-a="jump" data-d="${d}"><span>${WD[D.getUTCDay()]}</span><b>${D.getUTCDate()}</b><span>Hari ${i + 1}</span></button>`;
+  }).join('')}</div>`;
+  const body = days.map((d, i) => renderDay(t, d, i)).join('');
+  const orphanHtml = orphan.length ? `<section class="day"><div class="dayhead"><div class="d"><div class="k">Di luar tanggal trip</div><h2>${orphan.length} aktivitas</h2><div class="m">Tanggal trip diubah. Buka aktivitas untuk memindahkan harinya.</div></div></div>
+    <div class="tl">${sortItems(orphan).map((it) => renderItem(t, it, true)).join('')}</div></section>` : '';
+  return strip + body + orphanHtml;
+}
+
+function renderDay(t, d, i) {
+  const items = sortItems(t.items.filter((x) => x.day === d));
+  const resv = t.bookings.filter((b) => b.date === d);
+  const cost = items.reduce((s, x) => s + (x.cost ? idr(x.cost, x.cur) : 0), 0);
+  const stops = items.map((x) => mapsQuery(t, x)).filter(Boolean);
+  const route = mapsRoute(stops);
+  return `<section class="day" id="day-${d}">
+    <div class="dayhead">
+      <div class="d"><div class="k">Hari ${i + 1}</div><h2>${dayLabel(d)}</h2>
+        <div class="m num">${items.length} aktivitas${cost ? ` · ±Rp${fmtN(cost)}` : ''}</div></div>
+      <div class="row">
+        ${route ? `<a class="btn ghost small" href="${esc(route)}" target="_blank" rel="noopener">Rute</a>` : ''}
+        ${items.some((x) => x.time) && items.length > 1 ? `<button class="btn ghost small" data-a="sortDay" data-d="${d}">Urut jam</button>` : ''}
+      </div>
+    </div>
+    ${resv.map((b) => `<div class="resv"><span class="pill s-${b.status}">${esc(label(BOOK_STATUS, b.status))}</span><span><b>${esc(b.time || '')}</b> ${esc(b.title)}</span>${b.code ? `<span class="code">${esc(b.code)}</span>` : ''}</div>`).join('')}
+    <div class="tl">${items.map((it) => renderItem(t, it)).join('')}</div>
+    <div class="add"><button class="addbtn" data-a="addItem" data-d="${d}">+ Tambah di hari ini</button></div>
+  </section>`;
+}
+
+function renderItem(t, it, orphan) {
+  return `<div class="it ${it.done ? 'done' : ''}">
+    <div class="time">${esc(it.time || '')}</div>
+    <div class="body">
+      <div class="itcard" data-a="editItem" data-id="${it.id}" role="button" tabindex="0">
+        <span class="pill t-${it.type}">${esc(label(ITEM_TYPES, it.type))}</span>${orphan ? ` <span class="muted" style="font-size:12px">${shortDate(it.day)}</span>` : ''}
+        <div class="title">${esc(it.title)}</div>
+        ${it.location ? `<div class="loc">${isUrl(it.location) ? 'Link Google Maps tersimpan' : esc(it.location)}</div>` : ''}
+        ${stars(it)}
+        ${it.note ? `<div class="note">${esc(it.note)}</div>` : ''}
+        ${it.cost ? `<div class="cost num">${esc(moneyBoth(it.cost, it.cur))}</div>` : ''}
+      </div>
+      <div class="acts">
+        <a class="go" href="${esc(mapsNav(t, it))}" target="_blank" rel="noopener">Navigasi</a>
+        <a href="${esc(mapsOpen(t, it))}" target="_blank" rel="noopener">Maps</a>
+        <button data-a="reviews" data-kind="items" data-id="${it.id}">Review</button>
+        <button data-a="toggleDone" data-id="${it.id}">${it.done ? 'Batal' : 'Selesai'}</button>
+        <button data-a="moveUp" data-id="${it.id}" aria-label="Naikkan">↑</button>
+        <button data-a="moveDown" data-id="${it.id}" aria-label="Turunkan">↓</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+let exploreQuery = '';
+function renderPlaces(t) {
+  const saved = [...t.places].sort((a, b) => ((ratingAvg(b) || { avg: 0 }).avg - (ratingAvg(a) || { avg: 0 }).avg));
+  const city = CATALOG[state.placeCity] ? state.placeCity : 'phu-quoc';
+  const savedNames = new Set(t.places.map((p) => fold(p.title)).concat(t.items.map((i) => fold(i.title))));
+  const q = fold(exploreQuery.trim());
+  const list = CATALOG[city].items.filter((c) => !q || fold([c.title, c.location, c.note, c.type].join(' ')).includes(q));
+  const searchPlace = exploreQuery.trim() ? `${exploreQuery.trim()} ${CATALOG[city].place}` : `tempat wisata ${CATALOG[city].place}`;
+  return `<div class="section-h"><h2>Tempat simpanan</h2><span class="muted num">${t.places.length}</span></div>
+    ${saved.length ? `<div class="card">${saved.map((p) => `
+      <div class="li"><div class="main">
+        <div class="row" style="gap:6px"><span class="pill t-${p.type}">${esc(label(ITEM_TYPES, p.type))}</span>${stars(p)}</div>
+        <div class="title" data-a="editPlace" data-id="${p.id}" role="button" tabindex="0" style="cursor:pointer;margin-top:4px">${esc(p.title)}</div>
+        ${p.location ? `<div class="sub">${isUrl(p.location) ? 'Link Google Maps tersimpan' : esc(p.location)}</div>` : ''}
+        ${p.note ? `<div class="sub">${esc(p.note)}</div>` : ''}
+        <div class="acts"><button data-a="schedulePlace" data-id="${p.id}">Jadwalkan</button>
+          <a class="go" href="${esc(mapsNav(t, p))}" target="_blank" rel="noopener">Navigasi</a>
+          <a href="${esc(mapsOpen(t, p))}" target="_blank" rel="noopener">Maps</a>
+          <button data-a="reviews" data-kind="places" data-id="${p.id}">Review</button></div>
+      </div></div>`).join('')}</div>`
+      : `<div class="empty">Belum ada. Simpan dari daftar di bawah atau tekan "+ Tempat". Tempat yang sudah diberi rating diurutkan dari yang tertinggi.</div>`}
+
+    <div class="section-h"><h2>Jelajahi</h2></div>
+    <div class="row" style="gap:6px;margin-bottom:10px">${Object.entries(CATALOG).map(([k, c]) => `<button class="chip" data-a="placeCity" data-k="${k}" aria-pressed="${k === city}">${esc(c.label)}</button>`).join('')}</div>
+    <div class="f" style="margin-bottom:8px"><label for="exploreSearch" class="sr-only">Cari tempat</label>
+      <input id="exploreSearch" type="search" data-explore value="${esc(exploreQuery)}" placeholder="Cari: pantai, cong troi, kuliner…" autocomplete="off"></div>
+    <a class="btn ghost small block maplink" href="${esc(mapsSearch(searchPlace))}" target="_blank" rel="noopener">Cari "${esc(exploreQuery.trim() || 'tempat wisata')}" di Google Maps →</a>
+    <div class="card" style="margin-top:10px">${list.length ? list.map((c, i) => {
+      const has = savedNames.has(fold(c.title));
+      const rl = reviewLinks({ place: CATALOG[city].place }, c);
+      return `<div class="li"><div class="main">
+        <span class="pill t-${c.type}">${esc(label(ITEM_TYPES, c.type))}</span>
+        <div class="title" style="margin-top:4px">${esc(c.title)}</div>
+        <div class="sub">${esc(c.note)}</div>
+        <div class="acts">
+          ${has ? '<button disabled>Tersimpan</button>' : `<button data-a="saveCatalog" data-city="${city}" data-i="${CATALOG[city].items.indexOf(c)}">+ Simpan</button>`}
+          <a class="go" href="${esc(mapsSearch(c.location))}" target="_blank" rel="noopener">Maps</a>
+          <a href="${esc(rl.klook)}" target="_blank" rel="noopener">Klook</a>
+          <a href="${esc(rl.tripadvisor)}" target="_blank" rel="noopener">Tripadvisor</a>
+        </div></div></div>`;
+    }).join('') : '<div class="li"><div class="main muted">Tidak ada di daftar. Pakai tombol Google Maps di atas.</div></div>'}</div>`;
+}
+
+/* Daftar tempat pilihan. Rating tidak disertakan: lihat langsung di tiap platform lewat tombol Review. */
+const CATALOG = {
+  'phu-quoc': { label: 'Phu Quoc', place: 'Phu Quoc, Vietnam', items: [
+    { title: 'Kiss Bridge (Cầu Hôn)', type: 'photo', location: 'Kiss Bridge, Sunset Town, Phu Quoc', note: 'Sunset ±17:45–18:15. Titik nonton Symphony of the Sea gratis.' },
+    { title: 'Kiss of the Sea', type: 'activity', location: 'Kiss of the Sea, Sunset Town, Phu Quoc', note: 'Show 21:00–21:30 + fireworks 21:30. Selasa tanpa live performer.' },
+    { title: 'Symphony of the Sea', type: 'activity', location: 'Sunset Town, An Thoi, Phu Quoc', note: 'Show 19:35–20:10, gratis dari luar tribun.' },
+    { title: 'Cable car Hon Thom', type: 'transport', location: 'Hon Thom cable car station, An Thoi, Phu Quoc', note: 'Buka 08:00–18:00, ±20 menit ke Pulau Hon Thom.' },
+    { title: 'Aquatopia Water Park', type: 'activity', location: 'Aquatopia Water Park, Hon Thom, Phu Quoc', note: '20+ wahana, roller coaster kayu, Eagle Eyes 360°.' },
+    { title: 'VinWonders Phu Quoc', type: 'activity', location: 'VinWonders Phu Quoc, Bai Dai', note: 'Buka 09:00–19:30. ONCE Show, Typhoon World, aquarium.' },
+    { title: 'Khem Beach (Bãi Kem)', type: 'activity', location: 'Khem Beach, Phu Quoc', note: 'Pasir putih, air toska. Terbaik 16:00–17:30.' },
+    { title: 'Sao Beach (Bãi Sao)', type: 'activity', location: 'Sao Beach, Phu Quoc', note: 'Pantai dekat Sunset Town untuk bersantai.' },
+    { title: 'Bai Trao, Hon Thom', type: 'activity', location: 'Bai Trao, Hon Thom, Phu Quoc', note: 'Snorkeling, jembatan kayu, pasar seafood.' },
+    { title: 'Gavi Gate (Cổng Gavi)', type: 'photo', location: 'Gavi Gate, Sunset Town, Phu Quoc', note: 'Gerbang Mediterania, cantik malam atau pagi.' },
+    { title: 'Gate of Heaven (Cổng Trời)', type: 'photo', location: 'Cong Troi, Sunset Town, Phu Quoc', note: 'Pemandangan laut dan Sunset Town.' },
+    { title: 'Floating Pontoon Bridge (Cầu Phao)', type: 'photo', location: 'Cau Phao Ben Du Thuyen, Sunset Town, Phu Quoc', note: 'Refleksi terbaik 07:30–09:00.' },
+    { title: 'Pencil Tower & Clock Tower', type: 'photo', location: 'Roman Square, Sunset Town, Phu Quoc', note: 'Terbaik 15:30–16:00.' },
+    { title: 'Dragon Staircase (Thang Rồng)', type: 'photo', location: 'Thang Rong, Sunset Town, Phu Quoc', note: 'Tangga spiral relief naga. 15:30–17:00.' },
+    { title: 'VuiFest Bazaar Night Market', type: 'food', location: 'VuiFest Bazaar, Sunset Town, Phu Quoc', note: 'Seafood, cumi bakar, jajanan. ±150–300 ribu VND/orang.' },
+    { title: 'Sarah Restaurant', type: 'food', location: 'Sarah Restaurant, Sunset Town, Phu Quoc', note: 'Bersertifikat halal.' },
+    { title: 'RuNam Cafe', type: 'food', location: 'RuNam Cafe, Sunset Town, Phu Quoc', note: 'Pemandangan Kiss Bridge.' },
+    { title: 'Merci Hotel Sunset Town', type: 'stay', location: 'Merci Hotel, 167 Milan St, Sunset Town, An Thoi', note: 'Balkon menghadap fireworks, 5 menit ke cable car.' },
+  ] },
+  hanoi: { label: 'Hanoi', place: 'Hanoi, Vietnam', items: [
+    { title: 'Danau Hoan Kiem (Hồ Hoàn Kiếm)', type: 'photo', location: 'Hoan Kiem Lake, Hanoi', note: 'Pusat kota, Jembatan Huc dan Kuil Ngoc Son.' },
+    { title: 'Old Quarter (Phố Cổ)', type: 'activity', location: 'Hanoi Old Quarter', note: 'Jalan-jalan sempit penuh toko dan kuliner.' },
+    { title: 'Train Street', type: 'photo', location: 'Hanoi Train Street', note: 'Rel kereta di antara rumah dan kafe.' },
+    { title: 'Temple of Literature (Văn Miếu)', type: 'activity', location: 'Temple of Literature, Hanoi', note: 'Universitas pertama Vietnam.' },
+    { title: 'Ho Chi Minh Mausoleum', type: 'activity', location: 'Ho Chi Minh Mausoleum, Hanoi', note: 'Kompleks Ba Dinh. Berpakaian sopan.' },
+    { title: 'Hoa Lo Prison', type: 'activity', location: 'Hoa Lo Prison, Hanoi', note: 'Museum penjara bersejarah.' },
+    { title: 'St. Joseph\'s Cathedral', type: 'photo', location: 'St. Joseph\'s Cathedral, Hanoi', note: 'Katedral neo-Gotik dekat Hoan Kiem.' },
+    { title: 'Tran Quoc Pagoda', type: 'photo', location: 'Tran Quoc Pagoda, Hanoi', note: 'Pagoda tertua di Hanoi, di Danau Barat.' },
+    { title: 'Thang Long Water Puppet Theatre', type: 'activity', location: 'Thang Long Water Puppet Theatre, Hanoi', note: 'Pertunjukan wayang air tradisional.' },
+    { title: 'Dong Xuan Market', type: 'food', location: 'Dong Xuan Market, Hanoi', note: 'Pasar besar di Old Quarter.' },
+    { title: 'Long Bien Bridge', type: 'photo', location: 'Long Bien Bridge, Hanoi', note: 'Jembatan besi bersejarah di Sungai Merah.' },
+    { title: 'Day trip Ha Long Bay', type: 'activity', location: 'Ha Long Bay, Quang Ninh', note: 'Biasanya lewat tur dari Hanoi.' },
+    { title: 'Day trip Ninh Binh (Trang An)', type: 'activity', location: 'Trang An, Ninh Binh', note: 'Perahu menyusuri gua dan tebing karst.' },
+  ] },
+};
+
+function renderBookings(t) {
+  const list = [...t.bookings].sort((a, b) => ((a.date || '9') + (a.time || '')).localeCompare((b.date || '9') + (b.time || '')));
+  const conf = t.bookings.filter((b) => b.status === 'confirmed').length;
+  const total = t.bookings.reduce((s, b) => s + (b.price ? idr(b.price, b.cur) : 0), 0);
+  return `<div class="grid2" style="margin-top:6px">
+      <div class="card stat"><div class="l">Terkonfirmasi</div><div class="v">${conf} / ${t.bookings.length}</div></div>
+      <div class="card stat"><div class="l">Total harga</div><div class="v">±Rp${fmtN(total)}</div></div>
+    </div>
+    <div class="section-h"><h2>Reservasi</h2></div>
+    ${list.length ? `<div class="card">${list.map((b) => `
+      <div class="li"><div class="main">
+        <div class="row" style="gap:6px"><span class="pill s-${b.status}">${esc(label(BOOK_STATUS, b.status))}</span><span class="muted" style="font-size:12.5px">${esc(label(BOOK_KINDS, b.kind))}</span></div>
+        <div class="title" data-a="editBooking" data-id="${b.id}" role="button" tabindex="0" style="cursor:pointer;margin-top:4px">${esc(b.title)}</div>
+        <div class="sub num">${b.date ? dayLabel(b.date) : 'Tanpa tanggal'}${b.time ? ' · ' + esc(b.time) : ''}${b.price ? ' · ' + esc(moneyBoth(b.price, b.cur)) : ''}</div>
+        ${b.note ? `<div class="sub">${esc(b.note)}</div>` : ''}
+        <div class="acts">
+          ${b.code ? `<button data-a="copy" data-text="${esc(b.code)}">Kode: <span class="code">${esc(b.code)}</span></button>` : ''}
+          ${b.link ? `<a href="${esc(b.link)}" target="_blank" rel="noopener">Buka situs</a>` : ''}
+          <button data-a="cycleStatus" data-id="${b.id}">Ubah status</button>
+          <button data-a="editBooking" data-id="${b.id}">Ubah</button>
+        </div>
+      </div></div>`).join('')}</div>`
+      : `<div class="empty">Catat tiket pesawat, hotel, tiket atraksi, dan transfer di sini. Reservasi yang bertanggal juga muncul di rencana harian.</div>`}`;
+}
+
+function renderBudget(t) {
+  const spent = t.expenses.reduce((s, e) => s + idr(e.amount, e.cur), 0);
+  const planned = t.items.reduce((s, x) => s + (x.cost ? idr(x.cost, x.cur) : 0), 0) + t.bookings.reduce((s, b) => s + (b.price ? idr(b.price, b.cur) : 0), 0);
+  const pct = t.budgetIdr ? Math.min(100, (spent / t.budgetIdr) * 100) : 0;
+  const byCat = EXP_CATS.map(([k, l]) => [l, t.expenses.filter((e) => e.category === k).reduce((s, e) => s + idr(e.amount, e.cur), 0)]).filter((x) => x[1] > 0).sort((a, b) => b[1] - a[1]);
+  const max = byCat.length ? byCat[0][1] : 1;
+  const list = [...t.expenses].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  return `<div class="card" style="padding:16px;margin-top:6px">
+      <div class="muted" style="font-size:12.5px;font-weight:600">Sudah keluar</div>
+      <div class="big">Rp${fmtN(spent)}</div>
+      ${t.budgetIdr ? `<div class="bar ${spent > t.budgetIdr ? 'over' : ''}" style="margin:10px 0 6px"><i style="width:${pct}%"></i></div>
+        <div class="muted num" style="font-size:13px">dari budget Rp${fmtN(t.budgetIdr)} · ${spent > t.budgetIdr ? 'lebih Rp' + fmtN(spent - t.budgetIdr) : 'sisa Rp' + fmtN(t.budgetIdr - spent)}</div>`
+        : `<button class="btn ghost small" style="margin-top:10px" data-a="setBudget">Atur budget</button>`}
+    </div>
+    <div class="grid2" style="margin-top:10px">
+      <div class="card stat"><div class="l">Rencana biaya</div><div class="v">±Rp${fmtN(planned)}</div></div>
+      <div class="card stat" data-a="setBudget" role="button" tabindex="0" style="cursor:pointer"><div class="l">Kurs 1 ${esc(t.cur)}</div><div class="v">${rateOf(t.cur) ? 'Rp' + fmtRate(rateOf(t.cur)) : '—'}</div></div>
+    </div>
+    ${renderRateCard(t)}
+    ${byCat.length ? `<div class="section-h"><h2>Per kategori</h2></div><div class="card" style="padding:12px 14px">${byCat.map(([l, v]) => `
+      <div style="margin-bottom:10px"><div class="row" style="justify-content:space-between;font-size:13.5px"><span>${esc(l)}</span><b class="num">Rp${fmtN(v)}</b></div>
+      <div class="bar"><i style="width:${(v / max) * 100}%"></i></div></div>`).join('')}</div>` : ''}
+    <div class="section-h"><h2>Pengeluaran</h2><span class="muted num">${t.expenses.length}</span></div>
+    ${list.length ? `<div class="card">${list.map((e) => `
+      <div class="li" data-a="editExpense" data-id="${e.id}" role="button" tabindex="0" style="cursor:pointer"><div class="main">
+        <div class="title">${esc(e.title)}</div>
+        <div class="sub">${esc(label(EXP_CATS, e.category))}${e.date ? ' · ' + shortDate(e.date) : ''}</div></div>
+        <div style="text-align:right"><b class="num">${esc(money(e.amount, e.cur))}</b>${e.cur === 'VND' ? `<div class="sub num">±Rp${fmtN(idr(e.amount, 'VND'))}</div>` : ''}</div>
+      </div>`).join('')}</div>`
+      : `<div class="empty">Catat setiap pengeluaran dalam VND atau IDR. Totalnya otomatis dikonversi ke rupiah.</div>`}`;
+}
+
+function renderRateCard(t, withCalc) {
+  const r = rateOf(t.cur);
+  const quick = [10000, 50000, 100000, 500000, 1000000].map((n) => n * (t.cur === 'VND' || t.cur === 'KRW' ? 1 : t.cur === 'JPY' ? 0.01 : 0.0001));
+  return `<div class="card" style="padding:14px;margin-top:10px">
+    <div class="row" style="justify-content:space-between">
+      <div><div class="big" style="font-size:22px">1 ${esc(t.cur)} = ${r ? 'Rp' + fmtRate(r) : '—'}</div>
+      <div class="muted" style="font-size:12.5px">${esc(rateLine(t.cur))}</div></div>
+      <button class="btn ghost small" data-a="refreshRates">Perbarui</button>
+    </div>
+    ${withCalc ? `<div class="f2" style="margin-top:12px"><div class="f"><label for="cvLocal">${esc(t.cur)}</label><input id="cvLocal" inputmode="decimal" placeholder="100000" data-conv="local"></div>
+      <div class="f"><label for="cvIdr">IDR</label><input id="cvIdr" inputmode="decimal" placeholder="0" data-conv="idr"></div></div>` : ''}
+    ${r && t.cur !== 'IDR' ? `<div class="ratetbl num">${quick.filter((n) => n >= 1).map((n) => `<span>${esc(money(n, t.cur))}</span><b>Rp${fmtN(n * r)}</b>`).join('')}</div>` : ''}
+    <div class="muted" style="font-size:12px;margin-top:8px">Kurs tengah pasar, diperbarui harian. Money changer dan kartu biasanya sedikit lebih mahal.</div>
+  </div>`;
+}
+
+function renderMore(t) {
+  const groups = [...new Set(t.checklist.map((c) => c.group || 'Checklist'))];
+  const done = t.checklist.filter((c) => c.done).length;
+  return `<div class="section-h"><h2>Checklist</h2><span class="muted num">${done}/${t.checklist.length}</span></div>
+    ${t.checklist.length ? groups.map((g) => `<div class="muted" style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin:12px 0 6px">${esc(g)}</div>
+      <div class="card">${t.checklist.filter((c) => (c.group || 'Checklist') === g).map((c) => `
+        <div class="chk ${c.done ? 'on' : ''}"><input type="checkbox" id="c-${c.id}" data-a="toggleCheck" data-id="${c.id}" ${c.done ? 'checked' : ''}>
+        <label for="c-${c.id}">${esc(c.text)}</label><button class="x" data-a="delCheck" data-id="${c.id}" aria-label="Hapus">×</button></div>`).join('')}</div>`).join('')
+      : `<div class="empty">Tambahkan barang bawaan atau hal yang harus diurus sebelum berangkat.</div>`}
+
+    <div class="section-h"><h2>Catatan trip</h2></div>
+    <div class="f"><label for="tripNotes" class="muted">Tersimpan otomatis</label><textarea id="tripNotes" data-notes style="min-height:120px;border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:12px">${esc(t.notes)}</textarea></div>
+
+    <div class="section-h"><h2>Kalkulator kurs</h2></div>
+    ${renderRateCard(t, true)}
+
+    <div class="section-h"><h2>Data</h2></div>
+    <div class="stack">
+      <button class="btn ghost block" data-a="exportOpen">Salin cadangan trip ini</button>
+      <button class="btn ghost block" data-a="importOpen">Pulihkan dari cadangan</button>
+      <button class="btn danger block" data-a="deleteTrip" data-confirm>Hapus trip ini</button>
+    </div>
+    <p class="muted" style="font-size:12.5px;margin-top:14px">Data tersimpan di browser perangkat ini. Salin cadangan sebelum ganti HP atau menghapus data browser.</p>`;
+}
+
+/* ---------- sheet / forms ---------- */
+let sheetSubmit = null, sheetDelete = null;
+function closeSheet() { sheetRoot.innerHTML = ''; sheetSubmit = sheetDelete = null; }
+function field(f) {
+  const id = 'f-' + f.name;
+  const v = f.value ?? '';
+  const req = f.required ? 'required' : '';
+  let input;
+  if (f.type === 'textarea') input = `<textarea id="${id}" name="${f.name}" placeholder="${esc(f.placeholder || '')}">${esc(v)}</textarea>`;
+  else if (f.type === 'select') input = `<select id="${id}" name="${f.name}">${f.options.map(([k, l]) => `<option value="${esc(k)}" ${String(k) === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  else if (f.type === 'money') {
+    const local = (trip() && trip().cur) || 'VND';
+    const sel = f.cur || local;
+    input = `<div class="money"><input id="${id}" name="${f.name}" type="number" inputmode="decimal" min="0" step="any" value="${esc(v || '')}" placeholder="0"><select name="${f.name}Cur" aria-label="Mata uang">${[...new Set([local, sel, 'IDR'])].map((k) => `<option ${k === sel ? 'selected' : ''}>${k}</option>`).join('')}</select></div>`;
+  }
+  else if (f.type === 'ratings') input = `<div class="rgrid">${PLATFORMS.map(([k, l]) => `<label class="rcell"><span>${l}</span><input name="r_${k}" type="number" inputmode="decimal" min="0" max="5" step="0.1" placeholder="4.5" value="${esc((v && v[k]) || '')}"></label>`).join('')}</div>`;
+  else input = `<input id="${id}" name="${f.name}" type="${f.type || 'text'}" value="${esc(v)}" placeholder="${esc(f.placeholder || '')}" ${req} ${f.type === 'number' ? 'inputmode="decimal" step="any" min="0"' : ''}>`;
+  const hint = f.hint ? '<small class="muted" style="font-size:12px">Paling akurat: di Google Maps pilih tempatnya, tekan Bagikan → Salin link, lalu tempel di sini.</small>' : '';
+  return `<div class="f"><label for="${id}">${esc(f.label)}</label>${input}${hint}</div>`;
+}
+function openForm({ title, fields, submit = 'Simpan', onSubmit, onDelete }) {
+  const rows = []; let pair = [];
+  fields.forEach((f) => { if (f.half) { pair.push(f); if (pair.length === 2) { rows.push(`<div class="f2">${pair.map(field).join('')}</div>`); pair = []; } } else { if (pair.length) { rows.push(pair.map(field).join('')); pair = []; } rows.push(field(f)); } });
+  if (pair.length) rows.push(pair.map(field).join(''));
+  sheetRoot.innerHTML = `<div class="scrim" data-a="scrim"><form class="sheet" id="sheetForm" novalidate role="dialog" aria-modal="true" aria-label="${esc(title)}">
+    <div class="grab"></div><h2>${esc(title)}</h2>${rows.join('')}
+    <div class="foot">${onDelete ? '<button type="button" class="btn danger" data-a="sheetDelete" data-confirm>Hapus</button>' : ''}
+    <button type="button" class="btn ghost" data-a="closeSheet">Batal</button><button type="submit" class="btn">${esc(submit)}</button></div>
+  </form></div>`;
+  sheetSubmit = onSubmit; sheetDelete = onDelete || null;
+  const first = sheetRoot.querySelector('input,textarea');
+  if (first && !('ontouchstart' in window)) first.focus();
+}
+function openSheetHtml(title, html) {
+  sheetRoot.innerHTML = `<div class="scrim" data-a="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="grab"></div><h2>${esc(title)}</h2>${html}</div></div>`;
+  sheetSubmit = sheetDelete = null;
+}
+document.addEventListener('submit', (e) => {
+  if (e.target.id !== 'sheetForm') return;
+  e.preventDefault();
+  const fd = new FormData(e.target); const v = {};
+  for (const [k, val] of fd.entries()) v[k] = typeof val === 'string' ? val.trim() : val;
+  const req = e.target.querySelector('[required]');
+  if (req && !req.value.trim()) { req.focus(); toast('Isi ' + (req.labels && req.labels[0] ? req.labels[0].textContent : 'kolom wajib')); return; }
+  if (sheetSubmit && sheetSubmit(v) !== false) { closeSheet(); save(); render(); }
+});
+
+let toastTimer;
+function toast(msg) {
+  let el = $('.toast'); if (!el) { el = document.createElement('div'); el.className = 'toast'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+  el.textContent = msg; clearTimeout(toastTimer); toastTimer = setTimeout(() => el.remove(), 1800);
+}
+const num = (s) => { const n = parseFloat(String(s || '').replace(',', '.')); return isFinite(n) && n > 0 ? n : 0; };
+function readRatings(v) {
+  const r = {};
+  PLATFORMS.forEach(([k]) => { const n = num(v['r_' + k]); if (n) r[k] = Math.min(5, Math.round(n * 10) / 10); });
+  return r;
+}
+function reviewSheet(t, kind, x) {
+  const links = reviewLinks(t, x);
+  const avg = ratingAvg(x);
+  openSheetHtml(`Review: ${x.title}`, `
+    ${avg ? `<div class="big" style="font-size:26px">★ ${avg.avg.toFixed(1).replace('.', ',')}</div><div class="muted" style="font-size:13px;margin-bottom:12px">Rata-rata dari ${avg.n} platform yang kamu catat</div>` : '<p class="muted" style="margin-top:0;font-size:14px">Buka tiap platform untuk melihat rating dan ulasannya, lalu catat angkanya di sini supaya bisa dibandingkan.</p>'}
+    <div class="card">${PLATFORMS.map(([k, l]) => `<div class="li"><div class="main"><div class="title">${l}</div>
+      <div class="sub">${x.ratings && x.ratings[k] ? `★ ${String(x.ratings[k]).replace('.', ',')}` : 'Belum dicatat'}</div></div>
+      <a class="btn ghost small" href="${esc(links[k])}" target="_blank" rel="noopener">Buka</a></div>`).join('')}</div>
+    <div class="foot" style="margin-top:14px"><button class="btn ghost" data-a="closeSheet">Tutup</button>
+      <button class="btn" data-a="${kind === 'items' ? 'editItem' : 'editPlace'}" data-id="${x.id}">Catat rating</button></div>`);
+}
+const dayOptions = (t) => dayRange(t.start, t.end).map((d, i) => [d, `Hari ${i + 1} · ${dayLabel(d)}`]);
+
+/* ---------- entity forms ---------- */
+function tripForm(t) {
+  const isNew = !t;
+  openForm({
+    title: isNew ? 'Trip baru' : 'Ubah trip',
+    submit: isNew ? 'Buat trip' : 'Simpan',
+    fields: [
+      { name: 'name', label: 'Nama trip', value: t?.name, placeholder: 'Liburan Vietnam', required: true },
+      { name: 'place', label: 'Tujuan', value: t?.place, placeholder: 'Phu Quoc, Vietnam' },
+      { name: 'start', label: 'Mulai', type: 'date', value: t?.start || todayStr(), half: true },
+      { name: 'end', label: 'Selesai', type: 'date', value: t?.end || addDays(todayStr(), 3), half: true },
+      { name: 'cur', label: 'Mata uang negara tujuan', type: 'select', options: CURRENCIES.map((c) => [c[0], c[1]]), value: t?.cur || 'VND' },
+    ],
+    onSubmit(v) {
+      if (!v.start) { toast('Isi tanggal mulai'); return false; }
+      const end = v.end && v.end >= v.start ? v.end : v.start;
+      if (diffDays(v.start, end) > 59) { toast('Maksimal 60 hari per trip'); return false; }
+      const data = { name: v.name, place: v.place, start: v.start, end, cur: v.cur || 'VND' };
+      if (isNew) { const nt = newTrip(data); state.trips.push(nt); state.activeTripId = nt.id; state.tab = 'plan'; }
+      else Object.assign(t, data);
+      setTimeout(() => refreshRates(false), 0);
+    },
+  });
+}
+
+function itemForm(t, it, day) {
+  const isNew = !it;
+  const days = dayOptions(t);
+  if (!isNew && !days.some((d) => d[0] === it.day)) days.unshift([it.day, `${dayLabel(it.day)} (di luar trip)`]);
+  openForm({
+    title: isNew ? 'Aktivitas baru' : 'Ubah aktivitas',
+    fields: [
+      { name: 'title', label: 'Nama', value: it?.title, placeholder: 'Sunset di Kiss Bridge', required: true },
+      { name: 'day', label: 'Hari', type: 'select', options: days, value: it?.day || day || days[0]?.[0], half: true },
+      { name: 'time', label: 'Jam', type: 'time', value: it?.time, half: true },
+      { name: 'type', label: 'Jenis', type: 'select', options: ITEM_TYPES, value: it?.type || 'activity' },
+      { name: 'location', label: 'Lokasi: alamat, nama tempat, atau link Google Maps', value: it?.location, placeholder: 'Kiss Bridge, Sunset Town, Phu Quoc', hint: true },
+      { name: 'note', label: 'Catatan', type: 'textarea', value: it?.note, placeholder: 'Tips, jam buka, apa yang dibawa…' },
+      { name: 'cost', label: 'Perkiraan biaya', type: 'money', value: it?.cost, cur: it?.cur },
+      { name: 'ratings', label: 'Rating dari tiap platform (0–5, opsional)', type: 'ratings', value: it?.ratings },
+    ],
+    onSubmit(v) {
+      const data = { title: v.title, day: v.day, time: v.time, type: v.type, location: v.location, note: v.note, cost: num(v.cost), cur: v.costCur || t.cur, ratings: readRatings(v) };
+      if (isNew) t.items.push(Object.assign({ id: uid(), done: false }, data, { order: insertOrder(t, v.day, v.time) }));
+      else { const moved = it.day !== v.day; Object.assign(it, data); if (moved) it.order = insertOrder(t, v.day, v.time, it.id); }
+    },
+    onDelete: isNew ? null : () => { t.items = t.items.filter((x) => x.id !== it.id); },
+  });
+}
+// Posisi baru: sebelum aktivitas pertama yang jamnya lebih akhir, selain itu di paling bawah.
+function insertOrder(t, day, time, exceptId) {
+  const list = sortItems(t.items.filter((x) => x.day === day && x.id !== exceptId));
+  if (!list.length) return 1;
+  if (time) {
+    const idx = list.findIndex((x) => x.time && x.time > time);
+    if (idx === 0) return list[0].order - 1;
+    if (idx > 0) return (list[idx - 1].order + list[idx].order) / 2;
+  }
+  return list[list.length - 1].order + 1;
+}
+
+function placeForm(t, p) {
+  const isNew = !p;
+  openForm({
+    title: isNew ? 'Simpan tempat' : 'Ubah tempat',
+    fields: [
+      { name: 'title', label: 'Nama tempat', value: p?.title, placeholder: 'Khem Beach', required: true },
+      { name: 'type', label: 'Jenis', type: 'select', options: ITEM_TYPES, value: p?.type || 'activity' },
+      { name: 'location', label: 'Lokasi: alamat, nama tempat, atau link Google Maps', value: p?.location, hint: true },
+      { name: 'note', label: 'Catatan', type: 'textarea', value: p?.note },
+      { name: 'ratings', label: 'Rating dari tiap platform (0–5, opsional)', type: 'ratings', value: p?.ratings },
+    ],
+    onSubmit(v) {
+      const data = { title: v.title, type: v.type, location: v.location, note: v.note, ratings: readRatings(v) };
+      if (isNew) t.places.push(Object.assign({ id: uid() }, data)); else Object.assign(p, data);
+    },
+    onDelete: isNew ? null : () => { t.places = t.places.filter((x) => x.id !== p.id); },
+  });
+}
+function scheduleForm(t, p) {
+  const days = dayOptions(t);
+  openForm({
+    title: `Jadwalkan: ${p.title}`, submit: 'Masukkan ke rencana',
+    fields: [
+      { name: 'day', label: 'Hari', type: 'select', options: days, value: days[0]?.[0], half: true },
+      { name: 'time', label: 'Jam', type: 'time', half: true },
+      { name: 'keep', label: 'Setelah dijadwalkan', type: 'select', options: [['remove', 'Hapus dari daftar tempat'], ['keep', 'Tetap simpan di daftar']], value: 'remove' },
+    ],
+    onSubmit(v) {
+      t.items.push({ id: uid(), title: p.title, type: p.type, location: p.location, note: p.note, ratings: p.ratings, day: v.day, time: v.time, cost: 0, cur: t.cur, done: false, order: insertOrder(t, v.day, v.time) });
+      if (v.keep === 'remove') t.places = t.places.filter((x) => x.id !== p.id);
+      toast('Masuk ke rencana ' + shortDate(v.day));
+    },
+  });
+}
+
+function bookingForm(t, b) {
+  const isNew = !b;
+  openForm({
+    title: isNew ? 'Booking baru' : 'Ubah booking',
+    fields: [
+      { name: 'title', label: 'Nama', value: b?.title, placeholder: 'Tiket Kiss of the Sea', required: true },
+      { name: 'kind', label: 'Jenis', type: 'select', options: BOOK_KINDS, value: b?.kind || 'ticket', half: true },
+      { name: 'status', label: 'Status', type: 'select', options: BOOK_STATUS, value: b?.status || 'todo', half: true },
+      { name: 'date', label: 'Tanggal', type: 'date', value: b?.date, half: true },
+      { name: 'time', label: 'Jam', type: 'time', value: b?.time, half: true },
+      { name: 'code', label: 'Kode konfirmasi / nomor booking', value: b?.code },
+      { name: 'price', label: 'Harga', type: 'money', value: b?.price, cur: b?.cur },
+      { name: 'link', label: 'Link pemesanan', type: 'url', value: b?.link, placeholder: 'https://' },
+      { name: 'note', label: 'Catatan', type: 'textarea', value: b?.note },
+    ],
+    onSubmit(v) {
+      let link = v.link; if (link && !/^https?:\/\//i.test(link)) link = 'https://' + link;
+      const data = { title: v.title, kind: v.kind, status: v.status, date: v.date, time: v.time, code: v.code, price: num(v.price), cur: v.priceCur || 'VND', link, note: v.note };
+      if (isNew) t.bookings.push(Object.assign({ id: uid() }, data)); else Object.assign(b, data);
+    },
+    onDelete: isNew ? null : () => { t.bookings = t.bookings.filter((x) => x.id !== b.id); },
+  });
+}
+
+function expenseForm(t, e) {
+  const isNew = !e;
+  const today = todayStr();
+  openForm({
+    title: isNew ? 'Pengeluaran baru' : 'Ubah pengeluaran',
+    fields: [
+      { name: 'title', label: 'Untuk apa', value: e?.title, placeholder: 'Grab ke VinWonders', required: true },
+      { name: 'amount', label: 'Jumlah', type: 'money', value: e?.amount, cur: e?.cur },
+      { name: 'category', label: 'Kategori', type: 'select', options: EXP_CATS, value: e?.category || 'food', half: true },
+      { name: 'date', label: 'Tanggal', type: 'date', value: e?.date || (today >= t.start && today <= t.end ? today : t.start), half: true },
+    ],
+    onSubmit(v) {
+      const amount = num(v.amount); if (!amount) { toast('Isi jumlahnya'); return false; }
+      const data = { title: v.title, amount, cur: v.amountCur || 'VND', category: v.category, date: v.date };
+      if (isNew) t.expenses.push(Object.assign({ id: uid() }, data)); else Object.assign(e, data);
+    },
+    onDelete: isNew ? null : () => { t.expenses = t.expenses.filter((x) => x.id !== e.id); },
+  });
+}
+
+function budgetForm(t) {
+  const auto = state.rates[t.cur];
+  openForm({
+    title: 'Budget & kurs',
+    fields: [
+      { name: 'budget', label: 'Budget total trip (Rupiah)', type: 'number', value: t.budgetIdr || '', placeholder: '15000000' },
+      { name: 'mode', label: `Kurs ${t.cur} yang dipakai`, type: 'select', value: state.useManual[t.cur] ? 'manual' : 'auto',
+        options: [['auto', auto ? `Otomatis (Rp${fmtRate(auto.idr)}, ${rateAge(auto.at)})` : 'Otomatis (butuh internet)'], ['manual', 'Isi sendiri, misalnya kurs money changer']] },
+      { name: 'rate', label: `Kurs isian sendiri: 1 ${t.cur} = berapa Rupiah`, type: 'number', value: state.manual[t.cur] || '', placeholder: auto ? String(auto.idr) : '' },
+    ],
+    onSubmit(v) {
+      t.budgetIdr = num(v.budget);
+      const r = num(v.rate); if (r) state.manual[t.cur] = r;
+      if (v.mode === 'manual' && !state.manual[t.cur]) { toast('Isi kurs sendiri dulu'); return false; }
+      state.useManual[t.cur] = v.mode === 'manual';
+    },
+  });
+}
+
+function checkForm(t) {
+  const groups = [...new Set(['Bawaan', 'Sebelum berangkat', ...t.checklist.map((c) => c.group).filter(Boolean)])];
+  openForm({
+    title: 'Tambah checklist',
+    fields: [
+      { name: 'text', label: 'Item', placeholder: 'Sunscreen', required: true },
+      { name: 'group', label: 'Kelompok', type: 'select', options: groups.map((g) => [g, g]), value: groups[0] },
+    ],
+    submit: 'Tambah',
+    onSubmit(v) { t.checklist.push({ id: uid(), text: v.text, group: v.group, done: false }); },
+  });
+}
+
+/* ---------- import / export ---------- */
+function exportOpen(t) {
+  const json = JSON.stringify({ app: 'jalan-trip', v: 1, trip: t });
+  openSheetHtml('Cadangan trip', `<p class="muted" style="margin-top:0;font-size:14px">Salin teks ini lalu simpan di catatan HP, email, atau chat ke diri sendiri. Untuk memulihkan, tempel di "Pulihkan dari cadangan".</p>
+    <textarea class="io" id="exportText" readonly>${esc(json)}</textarea>
+    <div class="foot"><button class="btn ghost" data-a="closeSheet">Tutup</button><button class="btn" data-a="copyExport">Salin</button></div>`);
+}
+function importOpen() {
+  openSheetHtml('Pulihkan dari cadangan', `<p class="muted" style="margin-top:0;font-size:14px">Tempel teks cadangan, atau pilih file .json. Trip dari cadangan ditambahkan sebagai trip baru.</p>
+    <label for="importText" class="muted" style="font-size:12.5px;font-weight:700">Teks cadangan</label>
+    <textarea class="io" id="importText" placeholder='{"app":"jalan-trip",...}'></textarea>
+    <div class="f" style="margin-top:10px"><label for="importFile">Atau file</label><input type="file" id="importFile" accept=".json,application/json,text/plain"></div>
+    <div class="foot"><button class="btn ghost" data-a="closeSheet">Batal</button><button class="btn" data-a="doImport">Pulihkan</button></div>`);
+  $('#importFile').addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0]; if (!f) return;
+    const r = new FileReader(); r.onload = () => { $('#importText').value = String(r.result || ''); }; r.readAsText(f);
+  });
+}
+function doImport() {
+  let data;
+  try { data = JSON.parse($('#importText').value); } catch (e) { toast('Teks cadangan tidak terbaca'); return; }
+  const incoming = data && data.trip ? [data.trip] : data && Array.isArray(data.trips) ? data.trips : null;
+  if (!incoming || !incoming.length || !incoming.every((t) => t && Array.isArray(t.items))) { toast('Format cadangan tidak dikenali'); return; }
+  incoming.forEach((t) => { const nt = newTrip(Object.assign({}, t, { id: uid() })); state.trips.push(nt); state.activeTripId = nt.id; });
+  state.tab = 'plan'; closeSheet(); save(); render(); toast('Trip dipulihkan');
+}
+async function copyText(text, el) {
+  try { await navigator.clipboard.writeText(text); toast('Disalin'); }
+  catch (e) { if (el && el.select) { el.focus(); el.select(); toast('Tekan dan tahan untuk menyalin'); } else toast('Salin manual: ' + text); }
+}
+
+/* ---------- template (dari itinerary Phu Quoc) ---------- */
+function phuQuocTemplate(start) {
+  const D = (n) => addDays(start, n);
+  const I = (n, time, type, title, location, note, cost) => ({ id: uid(), day: D(n), time, type, title, location: location || '', note: note || '', cost: cost || 0, cur: 'VND', done: false, order: 0 });
+  const ST = 'Sunset Town, An Thoi, Phu Quoc';
+  const items = [
+    I(0, '17:50', 'transport', 'Tiba Bandara Phu Quoc (PQC)', 'Phu Quoc International Airport', 'Grab tidak selalu ada. Minta hotel menjemput atau pesan taksi (mygo/becar) sebelum mendarat. ±25 menit ke Sunset Town.'),
+    I(0, '18:20', 'stay', 'Check-in Merci Hotel Sunset Town', 'Merci Hotel, 167 Milan St, Sunset Town, An Thoi', 'Minta kamar dengan balkon menghadap area fireworks. Tanpa sarapan.'),
+    I(0, '18:50', 'food', 'Makan malam di Sunset Town', 'VuiFest Bazaar, ' + ST, 'Opsi: Sarah Restaurant (halal), RuNam Cafe, Sun Bavaria GastroPub. ±150–300 ribu VND per orang.'),
+    I(0, '19:35', 'activity', 'Symphony of the Sea', 'Kiss Bridge, ' + ST, 'Gratis dari Kiss Bridge. Datang 10 menit lebih awal.'),
+    I(0, '20:15', 'photo', 'Foto malam: Cổng Gavi, Cầu Phao, Cổng Trời', ST, 'Semua dalam radius ±400 m, jalan kaki.'),
+    I(0, '21:00', 'activity', 'Kiss of the Sea + fireworks 21:30', 'Kiss of the Sea, ' + ST, 'Datang 20 menit sebelum show. Setelah fireworks, jalan kaki ke hotel (antrean Grab bisa 45 menit).'),
+    I(1, '08:00', 'food', 'Sarapan, lalu jalan ke stasiun cable car', ST, 'Bawa sunscreen, baju renang, sandal, handuk.'),
+    I(1, '08:30', 'transport', 'Cable car ke Hon Thom', 'Hon Thom cable car station, An Thoi', 'Buka 08:00–18:00, ±20 menit. Datang pagi agar antrean pendek.'),
+    I(1, '09:00', 'activity', 'Aquatopia Water Park', 'Aquatopia Water Park, Hon Thom', 'Pagi paling sepi: roller coaster kayu → Eagle Eyes → seluncuran besar. Ada loker.'),
+    I(1, '11:30', 'food', 'Makan siang: Mango Restaurant / Bai Trao', 'Bai Trao, Hon Thom', 'Mango buka 11:00–14:30 (termasuk tiket combo).'),
+    I(1, '12:30', 'activity', 'Snorkeling & santai di Bai Trao', 'Bai Trao, Hon Thom', 'November musim kering, air tenang. Alat snorkeling bisa disewa.'),
+    I(1, '15:00', 'transport', 'Cable car kembali ke An Thoi', 'Hon Thom cable car station', 'Duduk di sisi kiri untuk pemandangan Sunset Town.'),
+    I(1, '15:30', 'photo', 'Foto sore: Pencil Tower, Clock Tower, Thang Rồng', ST, 'Cahaya terbaik 15:30–17:00.'),
+    I(1, '17:30', 'photo', 'Sunset di Kiss Bridge', 'Kiss Bridge, ' + ST, 'Tengah jembatan sisi kanan, menghadap barat. Matahari terbenam ±17:45.'),
+    I(1, '18:30', 'food', 'Makan malam', 'VuiFest Bazaar, ' + ST),
+    I(1, '19:35', 'activity', 'Symphony of the Sea', 'Kiss Bridge, ' + ST),
+    I(2, '08:00', 'transport', 'Grab ke VinWonders (±45 menit)', 'VinWonders Phu Quoc', 'Tiket online sebelum berangkat.'),
+    I(2, '09:00', 'activity', 'VinWonders Phu Quoc', 'VinWonders Phu Quoc, Bai Dai', 'European Avenue + ONCE Show → Adventure World → Aquarium → Typhoon World (tutup 17:30). Keluar paling lambat 16:30.', 950000),
+    I(2, '17:30', 'photo', 'Sunset Kiss Bridge + foto blue hour', 'Kiss Bridge, ' + ST),
+    I(2, '19:00', 'food', 'Makan malam di night market', 'VuiFest Bazaar, ' + ST, 'Cumi bakar, seafood, es krim.'),
+    I(2, '19:35', 'activity', 'Symphony of the Sea', 'Kiss Bridge, ' + ST),
+    I(2, '21:00', 'activity', 'Kiss of the Sea (show lengkap)', 'Kiss of the Sea, ' + ST, 'Hari Selasa tanpa live performer. Cek harinya.'),
+    I(3, '07:30', 'photo', 'Foto pagi: Cầu Phao, Cổng Gavi, Kiss Bridge', ST, 'Sepi dan cahaya lembut.'),
+    I(3, '09:30', 'food', 'Brunch: bún quậy, bánh tráng trộn, es kelapa', ST),
+    I(3, '11:00', 'stay', 'Check-out, titip koper di lobi', 'Merci Hotel, Sunset Town', 'Check-out resmi 11:00.'),
+    I(3, '11:30', 'activity', 'Waktu bebas: Sao Beach / oleh-oleh / An Thoi', 'Sao Beach, Phu Quoc'),
+    I(3, '15:20', 'transport', 'Berangkat ke Bandara PQC', 'Phu Quoc International Airport', 'Flight 17:16, batas check-in ±16:31.'),
+  ];
+  const counters = {}; items.forEach((it) => { counters[it.day] = (counters[it.day] || 0) + 1; it.order = counters[it.day]; });
+  return newTrip({
+    name: 'Phu Quoc', place: 'Phu Quoc, Vietnam', start, end: D(3), color: '#0F6E56', items,
+    places: [
+      { id: uid(), title: 'Khem Beach (Bãi Kem)', type: 'activity', location: 'Khem Beach, Phu Quoc', note: 'Pasir putih, terbaik 16:00–17:30. ±15–20 menit dari Sunset Town.' },
+    ],
+    bookings: [
+      { id: uid(), kind: 'stay', title: 'Merci Hotel Sunset Town', status: 'todo', date: D(0), time: '14:00', code: '', price: 0, cur: 'VND', link: '', note: 'Check-in 14:00, check-out 11:00.' },
+      { id: uid(), kind: 'transport', title: 'Jemputan bandara PQC → hotel', status: 'todo', date: D(0), time: '17:50', code: '', price: 0, cur: 'VND', link: '', note: 'Via WhatsApp staf hotel.' },
+      { id: uid(), kind: 'ticket', title: 'Cable car Hon Thom + Aquatopia', status: 'todo', date: D(1), time: '08:30', code: '', price: 0, cur: 'VND', link: 'https://sunset-town.com', note: 'Combo dengan makan siang lebih hemat.' },
+      { id: uid(), kind: 'ticket', title: 'Tiket VinWonders', status: 'todo', date: D(2), time: '09:00', code: '', price: 950000, cur: 'VND', link: 'https://vinwonders.com', note: '' },
+      { id: uid(), kind: 'ticket', title: 'Tiket Kiss of the Sea', status: 'todo', date: D(2), time: '21:00', code: '', price: 0, cur: 'VND', link: 'https://kissofthesea.com', note: 'Bisa juga lewat KKday.' },
+      { id: uid(), kind: 'flight', title: 'Penerbangan Phu Quoc → Hanoi', status: 'todo', date: D(3), time: '17:16', code: '', price: 0, cur: 'VND', link: '', note: '' },
+    ],
+    checklist: ['Sunscreen', 'Baju renang', 'Sandal', 'Handuk', 'Baju ganti untuk VinWonders'].map((x) => ({ id: uid(), text: x, group: 'Bawaan', done: false }))
+      .concat(['Beli tiket Kiss of the Sea', 'Beli tiket cable car + Aquatopia', 'Beli tiket VinWonders', 'Minta kamar balkon menghadap fireworks'].map((x) => ({ id: uid(), text: x, group: 'Sebelum berangkat', done: false }))),
+  });
+}
+function templateForm() {
+  openForm({
+    title: 'Contoh: Phu Quoc 4 hari', submit: 'Buat dari contoh',
+    fields: [{ name: 'start', label: 'Tanggal tiba di Phu Quoc', type: 'date', value: '2026-11-17' }],
+    onSubmit(v) {
+      if (!v.start) { toast('Isi tanggal'); return false; }
+      const t = phuQuocTemplate(v.start); state.trips.push(t); state.activeTripId = t.id; state.tab = 'plan';
+      toast('Semua isi bisa diubah atau dihapus');
+    },
+  });
+}
+
+/* ---------- actions ---------- */
+const find = (arr, id) => arr.find((x) => x.id === id);
+function moveItem(t, id, dir) {
+  const it = find(t.items, id); if (!it) return;
+  const list = sortItems(t.items.filter((x) => x.day === it.day));
+  const i = list.indexOf(it), j = i + dir;
+  if (j < 0 || j >= list.length) return;
+  list.forEach((x, k) => { x.order = k + 1; });
+  [list[i].order, list[j].order] = [list[j].order, list[i].order];
+}
+const actions = {
+  home() { state.activeTripId = null; save(); render(); window.scrollTo(0, 0); },
+  open(d) { state.activeTripId = d.id; state.tab = 'plan'; save(); render(); window.scrollTo(0, 0); },
+  tab(d) { state.tab = d.k; save(); render(); window.scrollTo(0, 0); },
+  newTrip() { tripForm(null); },
+  editTrip() { tripForm(trip()); },
+  template() { templateForm(); },
+  jump(d) { const el = document.getElementById('day-' + d.d); if (el) el.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); },
+  addItem(d) { const t = trip(); if (!dayRange(t.start, t.end).length) return toast('Atur tanggal trip dulu'); itemForm(t, null, d.d); },
+  editItem(d) { const t = trip(); itemForm(t, find(t.items, d.id)); },
+  toggleDone(d) { const it = find(trip().items, d.id); if (it) { it.done = !it.done; save(); render(); } },
+  moveUp(d) { moveItem(trip(), d.id, -1); save(); render(); },
+  moveDown(d) { moveItem(trip(), d.id, 1); save(); render(); },
+  sortDay(d) {
+    const t = trip();
+    const list = sortItems(t.items.filter((x) => x.day === d.d));
+    list.sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99')).forEach((x, k) => { x.order = k + 1; });
+    save(); render(); toast('Diurutkan berdasarkan jam');
+  },
+  reviews(d) { const t = trip(); const x = find(t[d.kind], d.id); if (x) reviewSheet(t, d.kind, x); },
+  placeCity(d) { state.placeCity = d.k; save(); render(); },
+  saveCatalog(d) {
+    const c = CATALOG[d.city] && CATALOG[d.city].items[+d.i]; if (!c) return;
+    trip().places.push({ id: uid(), title: c.title, type: c.type, location: c.location, note: c.note, ratings: {} });
+    save(); render(); toast('Tersimpan di Tempat simpanan');
+  },
+  refreshRates() { refreshRates(true); toast('Mengambil kurs terbaru…'); },
+  install() {
+    if (installEvt) { installEvt.prompt(); installEvt.userChoice.finally(() => { installEvt = null; render(); }); }
+    else openSheetHtml('Pasang di HP', installHelp());
+  },
+  addPlace() { placeForm(trip(), null); },
+  editPlace(d) { const t = trip(); placeForm(t, find(t.places, d.id)); },
+  schedulePlace(d) { const t = trip(); scheduleForm(t, find(t.places, d.id)); },
+  addBooking() { bookingForm(trip(), null); },
+  editBooking(d) { const t = trip(); bookingForm(t, find(t.bookings, d.id)); },
+  cycleStatus(d) {
+    const b = find(trip().bookings, d.id); if (!b) return;
+    const order = BOOK_STATUS.map((x) => x[0]); b.status = order[(order.indexOf(b.status) + 1) % order.length];
+    save(); render(); toast(label(BOOK_STATUS, b.status));
+  },
+  copy(d, el) { copyText(d.text, null); },
+  addExpense() { expenseForm(trip(), null); },
+  editExpense(d) { const t = trip(); expenseForm(t, find(t.expenses, d.id)); },
+  setBudget() { budgetForm(trip()); },
+  addCheck() { checkForm(trip()); },
+  toggleCheck(d) { const c = find(trip().checklist, d.id); if (c) { c.done = !c.done; save(); render(); } },
+  delCheck(d) { const t = trip(); t.checklist = t.checklist.filter((x) => x.id !== d.id); save(); render(); },
+  exportOpen() { exportOpen(trip()); },
+  copyExport() { copyText($('#exportText').value, $('#exportText')); },
+  importOpen() { importOpen(); },
+  doImport() { doImport(); },
+  deleteTrip() { state.trips = state.trips.filter((x) => x.id !== state.activeTripId); state.activeTripId = null; save(); render(); toast('Trip dihapus'); },
+  closeSheet() { closeSheet(); },
+  scrim(d, el, e) { if (e.target === el) closeSheet(); },
+  sheetDelete() { if (sheetDelete) { sheetDelete(); closeSheet(); save(); render(); toast('Dihapus'); } },
+};
+
+// Tombol hapus butuh dua ketukan (dialog confirm() tidak tersedia di semua tampilan).
+const armed = new WeakMap();
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-a]');
+  if (!el) return;
+  const a = el.dataset.a;
+  if (a === 'scrim') { if (e.target === el) closeSheet(); return; }
+  const link = e.target.closest('a');
+  if (link && el.contains(link)) return; // tautan (Maps, situs) di dalam kartu tetap terbuka
+  if (el.type === 'checkbox') { actions[a] && actions[a](el.dataset, el, e); return; }
+  if ('confirm' in el.dataset && !armed.get(el)) {
+    e.preventDefault();
+    const orig = el.textContent; el.textContent = 'Ketuk lagi untuk hapus'; armed.set(el, true);
+    setTimeout(() => { if (el.isConnected) { el.textContent = orig; armed.delete(el); } }, 3000);
+    return;
+  }
+  if (actions[a]) { e.preventDefault(); actions[a](el.dataset, el, e); }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && sheetRoot.firstChild) closeSheet();
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role="button"][data-a]')) { e.preventDefault(); e.target.click(); }
+});
+let notesTimer;
+document.addEventListener('input', (e) => {
+  const t = trip();
+  if (e.target.matches('[data-notes]') && t) { t.notes = e.target.value; clearTimeout(notesTimer); notesTimer = setTimeout(save, 400); }
+  if (e.target.matches('[data-conv]') && t) {
+    const v = num(e.target.value), r = rateOf(t.cur);
+    if (!r) return;
+    if (e.target.dataset.conv === 'local') $('#cvIdr').value = v ? Math.round(v * r) : '';
+    else $('#cvLocal').value = v ? +(v / r).toFixed(t.cur === 'VND' || t.cur === 'KRW' || t.cur === 'JPY' ? 0 : 2) : '';
+  }
+  if (e.target.matches('[data-explore]')) {
+    exploreQuery = e.target.value;
+    const pos = e.target.selectionStart;
+    render();
+    const el = $('#exploreSearch'); if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch (err) { /* tipe search */ } }
+  }
+});
+
+/* ---------- pasang di HP ---------- */
+let installEvt = null;
+const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; render(); });
+window.addEventListener('appinstalled', () => { installEvt = null; toast('Aplikasi terpasang'); render(); });
+function installHelp() {
+  const hosted = location.protocol === 'https:' && window.top === window.self;
+  return `<div style="font-size:14.5px;line-height:1.6">
+    ${hosted ? '' : '<div class="warnbar" style="margin-top:0">Tampilan ini belum bisa dipasang sebagai aplikasi. Buka dari alamat hosting aplikasi (lihat README), lalu ikuti langkah di bawah.</div>'}
+    <p><b>Android (Chrome):</b> buka menu ⋮ → <i>Instal aplikasi</i> atau <i>Tambahkan ke layar utama</i>.</p>
+    <p><b>iPhone (Safari):</b> tekan tombol Bagikan → <i>Tambahkan ke Layar Utama</i>.</p>
+    <p class="muted">Setelah terpasang, aplikasi tetap bisa dibuka tanpa sinyal. Kurs terakhir tetap tersimpan dan diperbarui lagi saat online.</p></div>
+    <div class="foot"><button class="btn" data-a="closeSheet">Oke</button></div>`;
+}
+
+window.addEventListener('online', () => refreshRates(false));
+render();
+refreshRates(false);
+
+// Offline & pasang ke layar utama: hanya aktif saat di-hosting sebagai situs biasa (https).
+try {
+  if ('serviceWorker' in navigator && location.protocol === 'https:' && window.top === window.self) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+} catch (e) { /* tampilan terbatas: lewati */ }
+})();
+</script>

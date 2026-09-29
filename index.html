@@ -107,7 +107,19 @@ button.pill{border:0;cursor:pointer;font-family:inherit}
 .it .body{border-left:2px solid var(--line);padding:0 0 10px 12px;position:relative;min-width:0}
 .it .body::before{content:"";position:absolute;left:-7px;top:14px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:2px solid var(--jade)}
 .it.done .body::before{background:var(--jade)}
-.it.done .title{text-decoration:line-through;color:var(--muted)}
+/* Dicentang: kartu samar 25% dan teksnya dicoret; kotak centangnya sendiri tetap jelas */
+.it .itcard{transition:opacity .2s}
+.it.done .itcard{opacity:.25}
+.it.done .time{opacity:.25}
+.it.done .acts{opacity:.55}
+.it.done .itcard .title,.it.done .itcard .loc,.it.done .itcard .note,.it.done .itcard .cost,.it.done .itcard .staymeta{text-decoration:line-through;text-decoration-thickness:1.5px}
+.it:not(.stayout) .itcard{padding-right:46px}
+.tick{position:absolute;z-index:2;top:2px;right:2px;width:40px;height:40px;border:0;background:none;padding:0;display:grid;place-items:center;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.tick i{width:24px;height:24px;border-radius:7px;border:2px solid var(--muted);background:var(--surface);display:grid;place-items:center;transition:background .15s,border-color .15s}
+.tick svg{width:15px;height:15px;stroke:var(--jade-ink);stroke-width:3.2;fill:none;stroke-linecap:round;stroke-linejoin:round;opacity:0;transition:opacity .15s}
+.tick[aria-checked="true"] i{background:var(--jade);border-color:var(--jade)}
+.tick[aria-checked="true"] svg{opacity:1}
+.tick:focus-visible i{outline:2px solid var(--jade);outline-offset:2px}
 .itcard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer}
 .itcard .title{font-weight:700;font-size:15px;line-height:1.3;margin:4px 0 2px;overflow-wrap:anywhere}
 .itcard .loc{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
@@ -1414,6 +1426,8 @@ function renderDay(t, d, i) {
       <div class="row">
         ${route ? `<a class="btn ghost small" href="${esc(route)}" target="_blank" rel="noopener">Rute</a>` : ''}
         ${items.some((x) => x.time) && items.length > 1 ? `<button class="btn ghost small" data-a="sortDay" data-d="${d}">Urut jam</button>` : ''}
+        ${items.some((x) => x.done) ? `<button class="btn ghost small" data-a="doneAll" data-d="${d}" data-v="0">Batal semua centang</button>`
+          : items.length > 1 ? `<button class="btn ghost small" data-a="doneAll" data-d="${d}" data-v="1">Centang semua</button>` : ''}
       </div>
     </div>
     ${resv.map((b) => resvRow(b, d)).join('')}
@@ -1427,6 +1441,7 @@ function renderItem(t, it, orphan) {
   return `<div class="it ${it.done ? 'done' : ''}">
     <div class="time">${esc(it.time || '')}</div>
     <div class="body">
+      <button type="button" class="tick" data-a="toggleDone" data-id="${it.id}" role="checkbox" aria-checked="${it.done ? 'true' : 'false'}" aria-label="${it.done ? 'Batal selesai' : 'Tandai selesai'}: ${esc(it.title)}"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></i></button>
       <div class="itcard" data-a="editItem" data-id="${it.id}" role="button" tabindex="0">
         <span class="pill t-${it.type}">${isStayItem(it) ? 'Check-in' : esc(label(ITEM_TYPES, it.type))}</span>${!orphan && !isStayItem(it) && fromOf(t, it.day) ? ` <span class="muted" style="font-size:12px">di ${esc(it.at || cityOf(t, it.day))}</span>` : ''}${orphan ? ` <span class="muted" style="font-size:12px">${shortDate(it.day)}</span>` : ''}
         <div class="title">${esc(it.title)}</div>
@@ -1445,7 +1460,6 @@ function renderItem(t, it, orphan) {
         <a class="go" href="${esc(mapsNav(t, it))}" target="_blank" rel="noopener">Navigasi</a>
         <a href="${esc(mapsOpen(t, it))}" target="_blank" rel="noopener">Maps</a>
         <button data-a="reviews" data-kind="items" data-id="${it.id}">Review</button>
-        <button data-a="toggleDone" data-id="${it.id}">${it.done ? 'Batal' : 'Selesai'}</button>
         <button data-a="moveUp" data-id="${it.id}" aria-label="Naikkan">↑</button>
         <button data-a="moveDown" data-id="${it.id}" aria-label="Turunkan">↓</button>
       </div>
@@ -2459,6 +2473,7 @@ function itemForm(t, it, day) {
       ...stayFields('type=stay', stayX, day || it?.day || days[0]?.[0]),
       { name: 'location', label: 'Lokasi', type: 'place', value: it?.location, g: it?.g, placeholder: 'Kiss Bridge', hint: true },
       { name: 'note', label: 'Catatan', type: 'textarea', value: it?.note, placeholder: 'Tips, jam buka, apa yang dibawa…' },
+      { name: 'done', label: 'Status', type: 'select', value: it?.done ? 'yes' : 'no', options: [['no', 'Belum dilakukan'], ['yes', 'Sudah selesai (dicentang)']] },
       priceModeField('type=stay', stayX),
       { name: 'cost', label: 'Perkiraan biaya', type: 'money', value: costShown, cur: it?.cur },
       { name: 'paid', label: 'Pembayaran', type: 'select', value: it && itemExpense(t, it) ? 'yes' : 'no',
@@ -2479,8 +2494,9 @@ function itemForm(t, it, day) {
         const p = stayPrice(data.cost, v.priceMode, s.nights);
         Object.assign(data, { day: s.stayIn, dayEnd: s.stayOut, time: s.timeIn, timeOut: s.timeOut, nights: s.nights, priceMode: v.priceMode, cost: p.total, perNight: p.perNight });
       }
+      data.done = v.done === 'yes';
       let x = it;
-      if (isNew) t.items.push(x = Object.assign({ id: uid(), done: false }, data, { order: insertOrder(t, data.day, data.time) }));
+      if (isNew) t.items.push(x = Object.assign({ id: uid() }, data, { order: insertOrder(t, data.day, data.time) }));
       else { const moved = it.day !== data.day; Object.assign(it, data); if (moved) it.order = insertOrder(t, data.day, data.time, it.id); }
       // tampilan per hari: pindah ke hari aktivitas yang baru disimpan
       if (planDayOf(t) !== 'all' && dayRange(t.start, t.end).includes(x.day)) state.planDay = Object.assign({}, state.planDay, { [t.id]: x.day });
@@ -2851,7 +2867,22 @@ const actions = {
   dayStep(d) { stepPlanDay(+d.k); },
   addItem(d) { const t = trip(); if (!dayRange(t.start, t.end).length) return toast('Atur tanggal trip dulu'); const p = planDayOf(t); itemForm(t, null, d.d || (p !== 'all' ? p : undefined)); },
   editItem(d) { const t = trip(); itemForm(t, find(t.items, d.id)); },
-  toggleDone(d) { const it = find(trip().items, d.id); if (it) { it.done = !it.done; save(); render(); } },
+  toggleDone(d) {
+    const it = find(trip().items, d.id); if (!it) return;
+    it.done = !it.done; save(); render();
+    // salah pencet? tersedia Urungkan; kartu yang sudah selesai juga bisa dibuka lalu status diubah
+    const id = it.id;
+    toast(it.done ? 'Ditandai selesai' : 'Centang dibatalkan', 'Urungkan', () => { const x = find(trip().items, id); if (x) { x.done = !x.done; save(); render(); } }, 5000);
+  },
+  doneAll(d) {
+    const t = trip(); const list = t.items.filter((x) => x.day === d.d);
+    const val = d.v === '1'; const prev = list.map((x) => [x.id, !!x.done]);
+    list.forEach((x) => { x.done = val; });
+    save(); render();
+    toast(val ? `${list.length} aktivitas ditandai selesai` : 'Semua centang hari ini dibatalkan', 'Urungkan', () => {
+      const tt = trip(); prev.forEach(([id, v]) => { const x = find(tt.items, id); if (x) x.done = v; }); save(); render();
+    }, 6000);
+  },
   moveUp(d) { moveItem(trip(), d.id, -1); save(); render(); },
   moveDown(d) { moveItem(trip(), d.id, 1); save(); render(); },
   sortDay(d) {

@@ -80,6 +80,44 @@ data untuk aplikasi umum. Tombol **Review** membuka halaman tempat itu di masing
 
 ---
 
+## C. Masuk dengan Google (trip tersimpan di akun)
+
+Setelah langkah ini, tombol **Masuk dengan Google** di aplikasi bisa dipakai. Semua trip otomatis tersimpan online,
+jadi tidak hilang saat data browser terhapus atau ganti HP.
+
+1. Buka https://console.firebase.google.com → proyek **jalan-public**.
+2. **Build → Authentication → Sign-in method → Add new provider → Google → Enable.**
+   Pilih email dukungan (Gmail kamu), lalu **Save**.
+3. Masih di Authentication: **Settings → Authorized domains.** Pastikan `ryukuza99-hue.github.io` ada di daftar.
+   Jika belum, **Add domain** lalu isi `ryukuza99-hue.github.io`.
+4. **Build → Firestore Database → Rules.** Ganti seluruh isinya dengan teks di bawah, lalu **Publish**:
+
+   ```
+   rules_version = '2';
+   service cloud.firestore {
+     match /databases/{database}/documents {
+       match /trips/{tripId} {
+         allow get, create, update: if request.auth != null && tripId.size() >= 16;
+       }
+       match /users/{uid} {
+         allow get, create, update: if request.auth != null && request.auth.uid == uid;
+       }
+     }
+   }
+   ```
+
+   Bagian `users` hanya bisa dibaca dan diubah oleh pemilik akun itu sendiri. Isinya daftar kode trip milik akun tersebut.
+
+`config.js` tidak perlu diubah.
+
+**Cara pakai:** di halaman awal atau tab **Lainnya**, tekan **Masuk dengan Google**.
+Di HP baru, atau setelah data browser terhapus, buka aplikasi lalu masuk lagi dengan akun yang sama: semua trip dimuat kembali.
+
+**File cadangan:** tab **Lainnya → Simpan cadangan semua trip ke HP (file)**. Di Android file masuk ke folder Download;
+di iPhone pilih **Simpan ke File**. Untuk memulihkan: **Pulihkan dari cadangan / file**, lalu pilih file itu.
+
+---
+
 ## Memperbarui aplikasi
 
 Jika ada file baru dari Claude (misalnya `index.html`), unggah ulang ke repository lewat **Add file → Upload files**.

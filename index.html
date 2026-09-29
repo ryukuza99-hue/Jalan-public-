@@ -538,6 +538,7 @@ function save(fromRemote) {
   }
   snapshot();
   if (!fromRemote) state.trips.forEach((t) => { if (t.shareId) pushChanges(t); });
+  if (!fromRemote && state.account) { try { scheduleCloud(); } catch (e) { /* belum siap saat awal dimuat */ } }
 }
 const trip = () => state.trips.find((t) => t.id === state.activeTripId) || null;
 const CFG = window.JALAN_CONFIG || {};
@@ -571,6 +572,7 @@ async function fbInit() {
       if (auth.authStateReady) await auth.authStateReady();
       if (!auth.currentUser) { try { await authM.signInAnonymously(auth); } catch (e) { /* offline: dicoba lagi saat online */ } }
       fb = { db, fs: fsM, auth, authM };
+      authM.onAuthStateChanged(auth, (u) => { if (!!(u && !u.isAnonymous) !== !!state.account) onAccount(); else if (state.account) cloudSync(); });
       return fb;
     })().catch((e) => { fbLoading = null; throw e; });
   }
@@ -629,6 +631,10 @@ function subscribe(t) {
     const tt = state.trips.find((x) => x.shareId === t.shareId);
     if (!tt) return;
     if (!snap.exists()) {
+      if (!snap.metadata.fromCache && tt.restoring) { // dipulihkan dari file tapi sudah tidak ada di server: pakai isi file
+        unsubscribe(tt.shareId); delete tt.shareId; tt.joining = false; tt.restoring = false; save(); render();
+        return;
+      }
       if (!snap.metadata.fromCache && tt.joining) {
         state.trips = state.trips.filter((x) => x !== tt); if (state.activeTripId === tt.id) state.activeTripId = null;
         unsubscribe(tt.shareId); save(true); render(); toast('Kode trip tidak ditemukan');
@@ -637,7 +643,7 @@ function subscribe(t) {
     }
     const data = snap.data();
     applyRemote(tt, data);
-    tt.joining = false;
+    tt.joining = false; delete tt.restoring;
     markSeen(tt, toRemote(tt));
     syncState[tt.id] = snap.metadata.hasPendingWrites ? (navigator.onLine ? 'pending' : 'offline') : snap.metadata.fromCache ? 'offline' : 'ok';
     save(true); softRender();
@@ -645,7 +651,7 @@ function subscribe(t) {
 }
 function unsubscribe(code) { if (subs[code]) { subs[code](); delete subs[code]; } }
 async function startSync() {
-  if (!syncEnabled() || !state.trips.some((t) => t.shareId)) return;
+  if (!syncEnabled() || (!state.trips.some((t) => t.shareId) && !state.account)) return;
   try { await fbInit(); state.trips.forEach(subscribe); } catch (e) { console.warn(e); }
 }
 function newCode() {
@@ -678,6 +684,148 @@ async function joinTrip(code) {
     state.trips.push(t); state.activeTripId = t.id; state.tab = 'plan';
     save(true); render(); subscribe(t); closeSheet();
   } catch (e) { toast('Tidak bisa terhubung. Coba lagi saat online.'); }
+}
+/* ---------- akun Google: semua trip tersimpan di server ----------
+ * Setiap trip otomatis dijadikan trip online (trips/<kode>), dan daftar kodenya disimpan di users/<uid>.
+ * Masuk di HP mana pun → trip di daftar itu dimuat kembali. Data tetap juga tersimpan di HP (bisa offline).
+ */
+const accountOn = () => !!(fb && fb.auth && fb.auth.currentUser && !fb.auth.currentUser.isAnonymous);
+async function cloudEnable(t) {
+  const { fs, db } = await fbInit();
+  t.shareId = newCode();
+  const remote = toRemote(t);
+  markSeen(t, remote);
+  save(true);
+  await fs.setDoc(fs.doc(db, 'trips', t.shareId), Object.assign({}, remote, { createdAt: fs.serverTimestamp(), updatedAt: fs.serverTimestamp() }));
+  subscribe(t);
+}
+let cloudBusy = false, cloudTimer = null;
+const scheduleCloud = () => { clearTimeout(cloudTimer); cloudTimer = setTimeout(cloudSync, 2000); };
+async function cloudSync() {
+  if (cloudBusy || !accountOn() || !navigator.onLine) return;
+  cloudBusy = true;
+  try {
+    const { fs, db, auth } = fb;
+    const ref = fs.doc(db, 'users', auth.currentUser.uid);
+    // 1. trip di akun yang belum ada di HP ini → dimuat
+    if (!state.cloudPulled || state.cloudPulled !== auth.currentUser.uid) {
+      const snap = await fs.getDoc(ref);
+      const idx = (snap.exists() && snap.data().trips) || {};
+      let added = 0;
+      Object.entries(idx).forEach(([id, x]) => {
+        if (!x || !x.code || state.trips.some((t) => t.shareId === x.code || t.id === id)) return;
+        const t = newTrip({ id, name: x.name || 'Memuat trip…', shareId: x.code, joining: true });
+        state.trips.push(t); subscribe(t); added++;
+      });
+      state.cloudPulled = auth.currentUser.uid;
+      save(true); render();
+      if (added) toast(`${added} trip dimuat dari akun`);
+    }
+    // 2. trip di HP ini yang belum online → dijadikan online
+    for (const t of state.trips) if (!t.shareId && !t.joining) await cloudEnable(t);
+    // 3. daftar trip di akun diperbarui
+    const want = Object.fromEntries(state.trips.filter((t) => t.shareId && !t.joining).map((t) => [t.id, { code: t.shareId, name: t.name || '' }]));
+    const wantS = JSON.stringify(want);
+    if (state.cloudIdx !== wantS) {
+      await fs.setDoc(ref, { trips: want, email: auth.currentUser.email || '', updatedAt: fs.serverTimestamp() }, { merge: true });
+      state.cloudIdx = wantS; save(true);
+    }
+  } catch (e) {
+    console.warn('akun', e);
+    if (e && e.code === 'permission-denied') toast('Akun belum bisa menyimpan: Rules Firestore untuk "users" belum ditambahkan (lihat PANDUAN)');
+  } finally { cloudBusy = false; }
+}
+async function cloudForget(id) {
+  if (!accountOn()) return;
+  const { fs, db, auth } = fb;
+  try { await fs.updateDoc(fs.doc(db, 'users', auth.currentUser.uid), { [`trips.${id}`]: fs.deleteField() }); state.cloudIdx = ''; save(true); } catch (e) { console.warn(e); }
+}
+async function googleSignIn() {
+  if (!syncEnabled()) { openSheetHtml('Masuk dengan Google', setupHelp('sync')); return; }
+  // Pop-up harus dibuka langsung dari ketukan; Firebase dimuat lebih dulu saat aplikasi dibuka.
+  if (!fb) {
+    toast('Menyiapkan login… ketuk sekali lagi sebentar lagi');
+    try { await fbInit(); render(); } catch (e) { toast('Tidak bisa terhubung. Cek internet.'); }
+    return;
+  }
+  const { auth, authM } = fb;
+  const provider = new authM.GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+  try {
+    if (auth.currentUser && auth.currentUser.isAnonymous) {
+      try { await authM.linkWithPopup(auth.currentUser, provider); }
+      catch (e) {
+        if (e.code !== 'auth/credential-already-in-use') throw e;
+        await authM.signInWithCredential(auth, authM.GoogleAuthProvider.credentialFromError(e)); // akun sudah pernah dipakai di HP lain
+      }
+    } else await authM.signInWithPopup(auth, provider);
+    state.cloudPulled = ''; state.cloudIdx = '';
+    onAccount();
+    toast('Masuk sebagai ' + (auth.currentUser.email || 'akun Google'));
+  } catch (e) {
+    const msg = {
+      'auth/popup-closed-by-user': '', 'auth/cancelled-popup-request': '',
+      'auth/popup-blocked': 'Pop-up diblokir. Izinkan pop-up untuk situs ini, lalu coba lagi.',
+      'auth/unauthorized-domain': 'Domain aplikasi belum diizinkan di Firebase (Authorized domains). Lihat PANDUAN.',
+      'auth/operation-not-allowed': 'Login Google belum diaktifkan di Firebase (Sign-in method → Google). Lihat PANDUAN.',
+    }[e.code];
+    if (msg !== '') toast(msg || 'Gagal masuk: ' + (e.code || e.message), null, null, 6000);
+  }
+}
+async function googleSignOut() {
+  if (!fb) return;
+  const { auth, authM } = fb;
+  await authM.signOut(auth);
+  state.account = null; state.cloudPulled = ''; state.cloudIdx = '';
+  save(true); render();
+  try { await authM.signInAnonymously(auth); } catch (e) { /* offline */ }
+  toast('Keluar dari akun. Trip tetap ada di HP ini.');
+}
+function onAccount() {
+  const u = fb && fb.auth.currentUser;
+  state.account = u && !u.isAnonymous ? { email: u.email || '', name: u.displayName || '' } : null;
+  save(true); render();
+  if (state.account) { startSync(); cloudSync(); }
+}
+function accountCard(compact) {
+  if (!syncEnabled()) return '';
+  const a = state.account;
+  if (a) return `<div class="card" style="padding:12px 14px"><div style="font-size:14px">☁︎ Tersimpan di akun <b>${esc(a.email || a.name)}</b></div>
+    <div class="muted" style="font-size:12.5px;margin-top:2px">Semua trip otomatis tersimpan online. Ganti HP atau data browser terhapus: cukup masuk lagi.</div>
+    ${compact ? '' : '<button class="btn ghost small" style="margin-top:10px" data-a="signOut" data-confirm>Keluar dari akun</button>'}</div>`;
+  return `<div class="card" style="padding:14px"><div style="font-weight:700">Amankan trip dengan akun Google</div>
+    <div class="muted" style="font-size:13px;margin:4px 0 10px">Trip tersimpan online seperti aplikasi pada umumnya, jadi tidak hilang walau data browser terhapus atau ganti HP.</div>
+    <button class="btn small" data-a="signIn">Masuk dengan Google</button></div>`;
+}
+
+/* ---------- file cadangan di memori HP ---------- */
+const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+async function saveBackupFile() {
+  if (!state.trips.length) { toast('Belum ada trip untuk dicadangkan'); return; }
+  const trips = state.trips.filter((t) => !t.joining).map((t) => Object.assign({}, t, { joining: undefined }));
+  const name = `jalan-cadangan-${todayStr()}.json`;
+  const json = JSON.stringify({ app: 'jalan-trip', v: 1, at: Date.now(), trips });
+  const file = new File([json], name, { type: 'application/json' });
+  try {
+    // iPhone: lewat menu Bagikan → "Simpan ke File". Android & komputer: langsung ke folder Download.
+    if (isIOS() && navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: 'Cadangan Jalan' });
+    else {
+      const url = URL.createObjectURL(file);
+      const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }
+    state.lastBackup = Date.now(); save(true); render();
+    toast(isIOS() ? 'Pilih "Simpan ke File" untuk menyimpan cadangan' : `Tersimpan: ${name} (folder Download)`, null, null, 4000);
+  } catch (e) { if (e && e.name !== 'AbortError') toast('Gagal menyimpan file cadangan'); }
+}
+function backupCard() {
+  if (!state.trips.length) return '';
+  const age = state.lastBackup ? Math.floor((Date.now() - state.lastBackup) / 86400000) : null;
+  if (state.account && age !== null && age < 14) return '';
+  if (!state.account && age !== null && age < 3) return '';
+  return `<div class="card" style="padding:12px 14px"><div style="font-size:14px">${age === null ? 'Trip belum pernah dicadangkan ke file.' : `Cadangan file terakhir ${age} hari lalu.`}</div>
+    <div class="muted" style="font-size:12.5px;margin:2px 0 10px">File cadangan tersimpan di memori HP dan tetap aman walau data browser dihapus.</div>
+    <button class="btn ghost small" data-a="backupFile">Simpan cadangan ke HP</button></div>`;
 }
 const shareUrl = (t) => `${location.origin}${location.pathname}#gabung-${t.shareId}`;
 function shareSheet(t) {
@@ -947,17 +1095,19 @@ function renderTrips() {
         const tag = until == null ? '' : until > 0 ? `H-${until}` : (t.end && diffDays(today, t.end) >= 0 ? 'Sedang berjalan' : 'Selesai');
         return `<div class="tripcard"><button class="trip" data-a="open" data-id="${t.id}">
           <div class="band" style="background:${esc(t.color)}"></div>
-          <div class="in"><h3>${esc(t.name || 'Tanpa nama')}${t.shareId ? ' <span class="pill s-booked" style="vertical-align:middle">Bersama</span>' : ''}</h3>
+          <div class="in"><h3>${esc(t.name || 'Tanpa nama')}${t.shareId ? ` <span class="pill s-booked" style="vertical-align:middle">${state.account ? 'Online' : 'Bersama'}</span>` : ''}</h3>
             <div class="meta"><span>${esc(t.country || t.place)}${(t.country || t.place) ? ' · ' : ''}${rangeLabel(t.start, t.end)} · ${n} hari</span><span class="count">${tag}</span></div>
             ${tripCities(t).length ? `<div class="meta" style="margin-top:2px"><span>${esc(tripCities(t).join(' → '))}</span></div>` : ''}
           </div></button>
           <button class="tripdel" data-a="removeTrip" data-id="${t.id}" data-confirm aria-label="Hapus trip ${esc(t.name)}">Hapus</button></div>`;
       }).join('') : `<div class="empty">Belum ada trip. Buat trip baru, lalu isi rencana harian, tempat, booking, dan pengeluaran sendiri.</div>`}
       ${recoverCard()}
+      ${accountCard(true)}
+      ${backupCard()}
       <button class="btn block" data-a="newTrip">+ Trip baru</button>
       <button class="btn ghost block" data-a="joinOpen">Gabung trip teman</button>
       <button class="btn ghost block" data-a="template">Mulai dari contoh: Phu Quoc 4 hari</button>
-      <button class="btn ghost block" data-a="importOpen">Pulihkan dari cadangan</button>
+      <button class="btn ghost block" data-a="importOpen">Pulihkan dari cadangan / file</button>
       ${standalone() ? '' : `<button class="btn ghost block" data-a="install">${installEvt ? 'Pasang aplikasi di HP ini' : 'Cara pasang di HP'}</button>`}
     </div>`;
 }
@@ -1462,18 +1612,20 @@ function renderMore(t) {
     <div class="card" style="padding:14px">
       ${t.shareId ? `<div style="font-size:14.5px">Trip ini tersinkron. ${syncBadge(t)}</div>
         <p class="muted" style="font-size:13px;margin:6px 0 12px">Setiap perubahan di HP mana pun yang sudah bergabung langsung muncul di HP lainnya. Perubahan saat offline dikirim begitu online.</p>
-        <div class="row"><button class="btn small" data-a="share">Bagikan link</button><button class="btn ghost small" data-a="stopShare" data-confirm>Berhenti sinkron di HP ini</button></div>`
+        <div class="row"><button class="btn small" data-a="share">Bagikan link</button>${state.account ? '' : '<button class="btn ghost small" data-a="stopShare" data-confirm>Berhenti sinkron di HP ini</button>'}</div>`
       : `<p style="font-size:14.5px;margin:0 0 12px">Buat link supaya teman bisa membuka dan mengubah trip ini dari HP-nya. Perubahan dari siapa pun langsung terlihat di semua HP.</p>
         <button class="btn small" data-a="share">Bagikan trip ini</button>`}
     </div>
 
-    <div class="section-h"><h2>Data</h2></div>
-    <div class="stack">
-      <button class="btn ghost block" data-a="exportOpen">Salin cadangan trip ini</button>
-      <button class="btn ghost block" data-a="importOpen">Pulihkan dari cadangan</button>
-      <button class="btn danger block" data-a="deleteTrip" data-confirm>${t.shareId ? 'Hapus trip ini dari HP ini' : 'Hapus trip ini'}</button>
+    <div class="section-h"><h2>Akun & cadangan</h2></div>
+    ${accountCard(false)}
+    <div class="stack" style="margin-top:10px">
+      <button class="btn ghost block" data-a="backupFile">Simpan cadangan semua trip ke HP (file)</button>
+      <button class="btn ghost block" data-a="importOpen">Pulihkan dari cadangan / file</button>
+      <button class="btn ghost block" data-a="exportOpen">Salin cadangan trip ini (teks)</button>
+      <button class="btn danger block" data-a="deleteTrip" data-confirm>${t.shareId && !state.account ? 'Hapus trip ini dari HP ini' : 'Hapus trip ini'}</button>
     </div>
-    <p class="muted" style="font-size:12.5px;margin-top:14px">Data tersimpan di browser perangkat ini. Salin cadangan sebelum ganti HP atau menghapus data browser.</p>`;
+    <p class="muted" style="font-size:12.5px;margin-top:14px">${state.account ? 'Trip tersimpan di HP ini dan di akun Google.' : 'Data tersimpan di browser HP ini. Masuk dengan Google atau simpan file cadangan supaya tidak hilang saat data browser dihapus.'}${state.lastBackup ? ` File cadangan terakhir: ${rateAge(Math.floor(state.lastBackup / 1000))}.` : ''}</p>`;
 }
 
 /* ---------- sheet / forms ---------- */
@@ -2398,12 +2550,21 @@ function doImport() {
   try { data = JSON.parse($('#importText').value); } catch (e) { toast('Teks cadangan tidak terbaca'); return; }
   const incoming = data && data.trip ? [data.trip] : data && Array.isArray(data.trips) ? data.trips : null;
   if (!incoming || !incoming.length || !incoming.every((t) => t && Array.isArray(t.items))) { toast('Format cadangan tidak dikenali'); return; }
+  let added = 0, skipped = 0;
   incoming.forEach((t) => {
-    const nt = newTrip(Object.assign({}, t, { id: uid() }));
-    delete nt.shareId; delete nt.joining; // cadangan menjadi trip lokal biasa; bagikan ulang jika perlu
-    state.trips.push(nt); state.activeTripId = nt.id;
+    // trip yang masih ada di HP ini tidak diduplikasi
+    if (state.trips.some((x) => x.id === t.id || (t.shareId && x.shareId === t.shareId))) { skipped++; return; }
+    const nt = newTrip(Object.assign({}, t));
+    delete nt.joining;
+    // trip online: versi server (bisa lebih baru) dipakai; jika sudah tidak ada di server, isi file dipakai
+    if (nt.shareId) { nt.joining = true; nt.restoring = true; }
+    state.removed = (state.removed || []).filter((x) => x !== nt.id);
+    state.trips.push(nt); state.activeTripId = nt.id; added++;
   });
-  state.tab = 'plan'; closeSheet(); save(); render(); toast('Trip dipulihkan');
+  state.tab = added === 1 ? 'plan' : state.tab;
+  if (added !== 1) state.activeTripId = null;
+  closeSheet(); save(); render(); startSync();
+  toast(added ? `${added} trip dipulihkan${skipped ? `, ${skipped} sudah ada` : ''}` : 'Semua trip di cadangan sudah ada di HP ini');
 }
 async function copyText(text, el) {
   try { await navigator.clipboard.writeText(text); toast('Disalin'); }
@@ -2490,10 +2651,11 @@ function removeTrip(id) {
   state.removed = (state.removed || []).concat(id).slice(-50); // dihapus sengaja: tidak ditawarkan untuk dipulihkan
   if (state.activeTripId === id) state.activeTripId = null;
   save(true); render(); window.scrollTo(0, 0);
-  toast(t.shareId ? `"${t.name}" dihapus dari HP ini. HP teman tetap menyimpannya.` : `"${t.name}" dihapus`, 'Urungkan', () => {
+  cloudForget(id);
+  toast(t.shareId && !state.account ? `"${t.name}" dihapus dari HP ini. HP teman tetap menyimpannya.` : `"${t.name}" dihapus`, 'Urungkan', () => {
     state.removed = (state.removed || []).filter((x) => x !== id);
     state.trips.splice(Math.min(idx, state.trips.length), 0, t);
-    save(true); render(); if (t.shareId) startSync();
+    save(true); render(); if (t.shareId) startSync(); if (state.account) { state.cloudIdx = ''; scheduleCloud(); }
     toast('Trip dikembalikan');
   }, 6000);
 }
@@ -2581,6 +2743,9 @@ const actions = {
   },
   addPlace() { placeForm(trip(), null); },
   addSocialPlace() { socialPlaceForm(trip()); },
+  signIn() { googleSignIn(); },
+  signOut() { googleSignOut(); },
+  backupFile() { saveBackupFile(); },
   recoverTrip(d) {
     const m = missingFromSnaps().find((x) => x.t.id === d.id); if (!m) return;
     const t = migrateTrip(m.t);
@@ -2717,6 +2882,7 @@ window.addEventListener('offline', () => render());
 render();
 refreshRates(false);
 setInterval(() => { if (!document.hidden) refreshRates(false); }, LIVE_MAX_AGE);
+if (syncEnabled() && !state.account) setTimeout(() => fbInit().catch(() => {}), 1500); // siapkan tombol Masuk dengan Google
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshRates(false); });
 startSync();
 handleHash();

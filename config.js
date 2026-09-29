@@ -8,7 +8,7 @@
  */
 window.JALAN_CONFIG = {
   firebase: {
-    apiKey: "AIzaSyDm•••••••••••••••••••••••••••••••",
+    apiKey: "AIzaSyDmVHFaPe3oAUMWkaFksuoBcKVw-KR3MBw",
     authDomain: "jalan-public.firebaseapp.com",
     projectId: "jalan-public",
     storageBucket: "jalan-public.firebasestorage.app",

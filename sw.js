@@ -1,5 +1,5 @@
 // Menyimpan aplikasi di HP supaya tetap bisa dibuka tanpa sinyal.
-const CACHE = 'jalan-v11';
+const CACHE = 'jalan-v12';
 const CORE = ['./', './index.html', './config.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 // Selalu coba versi terbaru dulu untuk file yang sering diubah.
 const FRESH = ['/index.html', '/config.js'];

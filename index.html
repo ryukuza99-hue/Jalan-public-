@@ -421,9 +421,15 @@ const KEY = 'jalan-trip.v1';
  */
 const blank = () => ({ v: 1, trips: [], activeTripId: null, tab: 'plan', rates: {}, manual: {}, useManual: {}, placeCity: '', exploreMode: '' });
 let storageOk = true;
+/* Pengaman data:
+   - Data yang gagal dibaca tidak pernah ditimpa: salinannya disimpan dulu di SNAP_BAD.
+   - Salinan otomatis trip (tanpa cache) disimpan di SNAP_KEY, maksimal 5 versi berbeda, bisa dipulihkan dari layar Trip saya.
+   - Browser diminta menyimpan data secara permanen (tidak dibersihkan otomatis saat memori penuh). */
+const SNAP_KEY = KEY + '.salinan', SNAP_BAD = KEY + '.rusak';
 function load() {
+  let raw = null;
   try {
-    const raw = localStorage.getItem(KEY);
+    raw = localStorage.getItem(KEY);
     if (raw) {
       const s = Object.assign(blank(), JSON.parse(raw));
       if (s.v === 1 && Array.isArray(s.trips)) {
@@ -431,9 +437,57 @@ function load() {
         s.trips.forEach(migrateTrip);
         return s;
       }
+      throw new Error('format');
     }
-  } catch (e) { storageOk = false; }
+  } catch (e) {
+    storageOk = false;
+    try { if (raw) localStorage.setItem(SNAP_BAD, raw); } catch (e2) { /* penuh */ }
+  }
   return blank();
+}
+function readSnaps() { try { return JSON.parse(localStorage.getItem(SNAP_KEY)) || []; } catch (e) { return []; } }
+let snapTimer = null;
+function snapshot() {
+  clearTimeout(snapTimer);
+  snapTimer = setTimeout(() => {
+    if (!state.trips.length) return; // jangan pernah menyimpan keadaan kosong sebagai salinan
+    const trips = JSON.stringify(state.trips);
+    const snaps = readSnaps();
+    if (snaps[0] && snaps[0].trips === trips) return;
+    const now = Date.now();
+    // satu salinan per jam; yang terbaru selalu diperbarui
+    if (snaps[0] && now - snaps[0].at < 3600e3) snaps[0] = { at: now, trips };
+    else snaps.unshift({ at: now, trips });
+    for (let n = Math.min(snaps.length, 5); n > 0; n--) {
+      try { localStorage.setItem(SNAP_KEY, JSON.stringify(snaps.slice(0, n))); return; } catch (e) { /* penuh: simpan lebih sedikit */ }
+    }
+  }, 1500);
+}
+function recoverable() {
+  const out = readSnaps().map((s) => { try { return { at: s.at, trips: JSON.parse(s.trips) }; } catch (e) { return null; } }).filter((s) => s && s.trips.length);
+  try {
+    const bad = localStorage.getItem(SNAP_BAD);
+    if (bad) { const s = JSON.parse(bad); if (s && Array.isArray(s.trips) && s.trips.length) out.unshift({ at: 0, trips: s.trips }); }
+  } catch (e) { /* tidak bisa dibaca */ }
+  return out;
+}
+try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* tidak didukung */ }
+// Trip dari salinan otomatis yang tidak ada lagi di daftar sekarang
+function missingFromSnaps() {
+  const have = new Set(state.trips.map((t) => t.id).concat(state.removed || []));
+  const seen = new Set(), out = [];
+  recoverable().forEach((s) => s.trips.forEach((t) => { if (t && t.id && !have.has(t.id) && !seen.has(t.id)) { seen.add(t.id); out.push({ at: s.at, t }); } }));
+  return out;
+}
+function recoverCard() {
+  const miss = missingFromSnaps(); if (!miss.length) return '';
+  return `<div class="card" style="padding:14px;border-color:var(--amber)">
+    <div style="font-weight:700">Trip yang bisa dipulihkan</div>
+    <p class="muted" style="font-size:13px;margin:4px 0 10px">Dari salinan otomatis di HP ini.</p>
+    ${miss.map(({ at, t }) => `<div class="row" style="justify-content:space-between;gap:8px;margin-bottom:8px">
+      <div><b>${esc(t.name || 'Tanpa nama')}</b><div class="muted num" style="font-size:12.5px">${(t.items || []).length} aktivitas · ${(t.expenses || []).length} pengeluaran${at ? ' · salinan ' + rateAge(Math.floor(at / 1000)) : ''}</div></div>
+      <button class="btn small" data-a="recoverTrip" data-id="${esc(t.id)}">Pulihkan</button></div>`).join('')}
+  </div>`;
 }
 /*
  * Trip = satu negara (country) + rentang tanggal. Kota diatur per tanggal di t.days: { '2026-11-17': { city: 'Phu Quoc' } },
@@ -476,7 +530,13 @@ function routeLabel(t) {
 }
 let state = load();
 function save(fromRemote) {
-  try { localStorage.setItem(KEY, JSON.stringify(state)); storageOk = true; } catch (e) { storageOk = false; }
+  try { localStorage.setItem(KEY, JSON.stringify(state)); storageOk = true; }
+  catch (e) {
+    // penuh: buang cache yang bisa diambil ulang, lalu coba lagi
+    state.gexplore = {}; state.gcat = {}; state.hist = {};
+    try { localStorage.setItem(KEY, JSON.stringify(state)); storageOk = true; } catch (e2) { storageOk = false; }
+  }
+  snapshot();
   if (!fromRemote) state.trips.forEach((t) => { if (t.shareId) pushChanges(t); });
 }
 const trip = () => state.trips.find((t) => t.id === state.activeTripId) || null;
@@ -893,6 +953,7 @@ function renderTrips() {
           </div></button>
           <button class="tripdel" data-a="removeTrip" data-id="${t.id}" data-confirm aria-label="Hapus trip ${esc(t.name)}">Hapus</button></div>`;
       }).join('') : `<div class="empty">Belum ada trip. Buat trip baru, lalu isi rencana harian, tempat, booking, dan pengeluaran sendiri.</div>`}
+      ${recoverCard()}
       <button class="btn block" data-a="newTrip">+ Trip baru</button>
       <button class="btn ghost block" data-a="joinOpen">Gabung trip teman</button>
       <button class="btn ghost block" data-a="template">Mulai dari contoh: Phu Quoc 4 hari</button>
@@ -2426,9 +2487,11 @@ function removeTrip(id) {
   const t = state.trips[idx];
   if (t.shareId) unsubscribe(t.shareId);
   state.trips.splice(idx, 1);
+  state.removed = (state.removed || []).concat(id).slice(-50); // dihapus sengaja: tidak ditawarkan untuk dipulihkan
   if (state.activeTripId === id) state.activeTripId = null;
   save(true); render(); window.scrollTo(0, 0);
   toast(t.shareId ? `"${t.name}" dihapus dari HP ini. HP teman tetap menyimpannya.` : `"${t.name}" dihapus`, 'Urungkan', () => {
+    state.removed = (state.removed || []).filter((x) => x !== id);
     state.trips.splice(Math.min(idx, state.trips.length), 0, t);
     save(true); render(); if (t.shareId) startSync();
     toast('Trip dikembalikan');
@@ -2518,6 +2581,13 @@ const actions = {
   },
   addPlace() { placeForm(trip(), null); },
   addSocialPlace() { socialPlaceForm(trip()); },
+  recoverTrip(d) {
+    const m = missingFromSnaps().find((x) => x.t.id === d.id); if (!m) return;
+    const t = migrateTrip(m.t);
+    ['items', 'places', 'bookings', 'expenses', 'checklist'].forEach((c) => { if (!Array.isArray(t[c])) t[c] = []; });
+    state.trips.push(t); save(); render(); startSync();
+    toast(`${t.name || 'Trip'} dipulihkan`);
+  },
   addRec(d) { const t = trip(); const x = find(t[d.kind], d.id); if (x) recForm(t, d.kind, x); },
   delRec(d) {
     const t = trip(); const x = find(t[d.kind], d.id); if (!x) return;

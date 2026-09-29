@@ -184,6 +184,20 @@ button.pill{border:0;cursor:pointer;font-family:inherit}
 .citybtn svg{width:14px;height:14px}
 .citybtn.unset{background:var(--amber-soft);color:var(--amber)}
 .strip .stripcity{display:block;max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.strip{position:sticky;top:calc(env(safe-area-inset-top,0px) + 58px);z-index:4;background:var(--bg)}
+.strip button{position:relative}
+.strip button[aria-pressed="true"]{background:var(--jade);border-color:var(--jade);color:var(--jade-ink)}
+.strip button[aria-pressed="true"] span{color:inherit;opacity:.85}
+.stripdot{position:absolute;top:5px;right:5px;width:6px;height:6px;border-radius:50%;background:var(--jade)}
+.strip button[aria-pressed="true"] .stripdot{background:var(--jade-ink)}
+.daynav{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:14px 0 72px}
+.daynav .btn{white-space:nowrap}
+.daynav span{text-align:center}
+.daynav .btn:disabled{visibility:hidden}
+@keyframes slideL{from{opacity:.3;transform:translateX(28px)}to{opacity:1;transform:none}}
+@keyframes slideR{from{opacity:.3;transform:translateX(-28px)}to{opacity:1;transform:none}}
+.slide-l{animation:slideL .22s ease-out}
+.slide-r{animation:slideR .22s ease-out}
 .seg{display:flex;gap:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;width:fit-content;max-width:100%}
 .seg button{border:none;background:var(--surface);padding:7px 14px;font-weight:600;font-size:13.5px;color:var(--muted)}
 .seg button+button{border-left:1px solid var(--line)}
@@ -1075,6 +1089,7 @@ function render() {
     const views = { plan: renderPlan, places: renderPlaces, bookings: renderBookings, budget: renderBudget, more: renderMore };
     app.innerHTML = renderTripHeader(t) + (views[state.tab] || renderPlan)(t) + renderFab();
     if (state.tab === 'places') fetchExplore(t);
+    if (state.tab === 'plan') centerStrip(false);
   }
 }
 
@@ -1131,9 +1146,11 @@ const sortItems = (arr) => [...arr].sort((a, b) => a.order - b.order);
 function renderPlan(t) {
   const days = dayRange(t.start, t.end);
   const orphan = t.items.filter((i) => !days.includes(i.day));
-  const strip = `<div class="strip">${days.map((d, i) => {
+  const sel = planDayOf(t);
+  const strip = `<div class="strip" id="dayStrip">${days.length > 1 ? `<button data-a="jump" data-d="all" aria-pressed="${sel === 'all'}" class="stripall"><span>Semua</span><b>${days.length}</b><span class="stripcity">hari</span></button>` : ''}${days.map((d, i) => {
     const D = parseD(d); const c = cityOf(t, d);
-    return `<button data-a="jump" data-d="${d}"><span>${WD[D.getUTCDay()]}</span><b>${D.getUTCDate()}</b><span class="stripcity">${c && fromOf(t, d) ? '→ ' : ''}${esc(c || 'Hari ' + (i + 1))}</span></button>`;
+    const n = t.items.filter((x) => x.day === d).length;
+    return `<button data-a="jump" data-d="${d}" aria-pressed="${sel === d}"><span>${WD[D.getUTCDay()]}</span><b>${D.getUTCDate()}</b><span class="stripcity">${c && fromOf(t, d) ? '→ ' : ''}${esc(c || 'Hari ' + (i + 1))}</span>${n ? `<i class="stripdot" aria-label="${n} aktivitas"></i>` : ''}</button>`;
   }).join('')}</div>`;
   const route = routeLabel(t);
   const unset = days.filter((d) => !cityOf(t, d)).length;
@@ -1141,11 +1158,62 @@ function renderPlan(t) {
       <div><div class="k">Rute kota</div><div class="rl">${route ? esc(route) : 'Belum ada kota yang diatur'}</div></div>
       <button class="btn ${unset === days.length ? '' : 'ghost '}small" data-a="setCity" data-d="${days.find((d) => !cityOf(t, d)) || days[0] || ''}">${unset ? `Atur kota (${unset} hari)` : 'Ubah kota'}</button>
     </div>`;
-  const body = days.map((d, i) => renderDay(t, d, i)).join('');
+  let body;
+  if (sel === 'all') body = days.map((d, i) => renderDay(t, d, i)).join('');
+  else {
+    const i = days.indexOf(sel);
+    const nav = `<div class="daynav">
+      <button class="btn ghost small" data-a="dayStep" data-k="-1" ${i > 0 ? '' : 'disabled'} aria-label="Hari sebelumnya">‹ ${i > 0 ? shortDate(days[i - 1]) : ''}</button>
+      <span class="muted num" style="font-size:12.5px">Hari ${i + 1} dari ${days.length} · geser kiri/kanan</span>
+      <button class="btn ghost small" data-a="dayStep" data-k="1" ${i < days.length - 1 ? '' : 'disabled'} aria-label="Hari berikutnya">${i < days.length - 1 ? shortDate(days[i + 1]) : ''} ›</button></div>`;
+    body = `<div id="dayPane">${renderDay(t, sel, i)}</div>${nav}`;
+  }
   const orphanHtml = orphan.length ? `<section class="day"><div class="dayhead"><div class="d"><div class="k">Di luar tanggal trip</div><h2>${orphan.length} aktivitas</h2><div class="m">Tanggal trip diubah. Buka aktivitas untuk memindahkan harinya.</div></div></div>
     <div class="tl">${sortItems(orphan).map((it) => renderItem(t, it, true)).join('')}</div></section>` : '';
-  return strip + (days.length ? summary : '') + body + orphanHtml;
+  return strip + (days.length && (sel === 'all' || days.length === 1) ? summary : '') + body + orphanHtml;
 }
+/* Tab Rencana menampilkan satu hari: pilih tanggal di strip atas, geser kiri/kanan, atau tombol ‹ ›. "Semua" = semua hari. */
+function planDayOf(t) {
+  const days = dayRange(t.start, t.end);
+  const v = (state.planDay || {})[t.id];
+  if (v === 'all' || days.includes(v)) return v;
+  if (!days.length) return 'all';
+  const today = todayStr();
+  return days.includes(today) ? today : days[0];
+}
+function setPlanDay(t, d, dir) {
+  state.planDay = Object.assign({}, state.planDay, { [t.id]: d });
+  save(true); render();
+  const pane = $('#dayPane');
+  if (pane && dir && !matchMedia('(prefers-reduced-motion: reduce)').matches) pane.classList.add(dir > 0 ? 'slide-l' : 'slide-r');
+  window.scrollTo({ top: 0 });
+  centerStrip(true);
+}
+function stepPlanDay(dir) {
+  const t = trip(); if (!t) return;
+  const days = dayRange(t.start, t.end), cur = planDayOf(t);
+  if (cur === 'all') return;
+  const n = days[days.indexOf(cur) + dir];
+  if (n) setPlanDay(t, n, dir);
+}
+function centerStrip(smooth) {
+  const s = $('#dayStrip'), b = s && s.querySelector('[aria-pressed="true"]');
+  if (b) s.scrollTo({ left: b.offsetLeft - (s.clientWidth - b.offsetWidth) / 2, behavior: smooth ? 'smooth' : 'auto' });
+}
+// Geser kiri/kanan di tab Rencana untuk pindah hari
+let swipe = null;
+document.addEventListener('touchstart', (e) => {
+  if (state.tab !== 'plan' || !trip() || e.touches.length !== 1 || sheetRoot.innerHTML || pickerRoot.innerHTML) { swipe = null; return; }
+  if (e.target.closest('.strip,.chips,input,textarea,select,.ratetbl')) { swipe = null; return; }
+  swipe = { x: e.touches[0].clientX, y: e.touches[0].clientY, at: Date.now() };
+}, { passive: true });
+document.addEventListener('touchend', (e) => {
+  if (!swipe) return;
+  const dx = e.changedTouches[0].clientX - swipe.x, dy = e.changedTouches[0].clientY - swipe.y;
+  const ok = Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.8 && Date.now() - swipe.at < 700;
+  swipe = null;
+  if (ok) stepPlanDay(dx < 0 ? 1 : -1);
+}, { passive: true });
 
 const isStayItem = (x) => x.type === 'stay' && x.dayEnd && x.dayEnd > x.day;
 const isStayBooking = (b) => b.kind === 'stay' && b.dateEnd && b.dateEnd > b.date;
@@ -2315,6 +2383,8 @@ function itemForm(t, it, day) {
       let x = it;
       if (isNew) t.items.push(x = Object.assign({ id: uid(), done: false }, data, { order: insertOrder(t, data.day, data.time) }));
       else { const moved = it.day !== data.day; Object.assign(it, data); if (moved) it.order = insertOrder(t, data.day, data.time, it.id); }
+      // tampilan per hari: pindah ke hari aktivitas yang baru disimpan
+      if (planDayOf(t) !== 'all' && dayRange(t.start, t.end).includes(x.day)) state.planDay = Object.assign({}, state.planDay, { [t.id]: x.day });
       if (v.book === 'yes') { const b = syncBookingFromItem(t, x, v.bookCode || ''); if (isNew) toast(`Tercatat juga di Booking: ${label(BOOK_KINDS, b.kind)}`); }
       else unlinkBooking(t, x);
       if (v.paid === 'yes') { upsertExpense(t, { itemId: x.id }, expFromItem(x)); markPaid(linkedBooking(t, x)); }
@@ -2674,8 +2744,13 @@ const actions = {
   newTrip() { tripForm(null); },
   editTrip() { tripForm(trip()); },
   template() { templateForm(); },
-  jump(d) { const el = document.getElementById('day-' + d.d); if (el) el.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); },
-  addItem(d) { const t = trip(); if (!dayRange(t.start, t.end).length) return toast('Atur tanggal trip dulu'); itemForm(t, null, d.d); },
+  jump(d) {
+    const t = trip(); const cur = planDayOf(t);
+    const days = dayRange(t.start, t.end);
+    setPlanDay(t, d.d, cur === 'all' || d.d === 'all' ? 0 : Math.sign(days.indexOf(d.d) - days.indexOf(cur)));
+  },
+  dayStep(d) { stepPlanDay(+d.k); },
+  addItem(d) { const t = trip(); if (!dayRange(t.start, t.end).length) return toast('Atur tanggal trip dulu'); const p = planDayOf(t); itemForm(t, null, d.d || (p !== 'all' ? p : undefined)); },
   editItem(d) { const t = trip(); itemForm(t, find(t.items, d.id)); },
   toggleDone(d) { const it = find(trip().items, d.id); if (it) { it.done = !it.done; save(); render(); } },
   moveUp(d) { moveItem(trip(), d.id, -1); save(); render(); },

@@ -900,6 +900,19 @@ async function searchPlaces(query, n = 5) {
   placeCache.set(key, out);
   return out;
 }
+/* Cadangan kalau Google gagal/kuota habis: OpenStreetMap (Nominatim), gratis tanpa key, tanpa rating.
+   Link Maps tetap ke Google Maps lewat koordinat. Hasilnya ditandai src:'osm' supaya rating Google bisa diambil nanti. */
+const noG = (x) => !x.g || x.g.src === 'osm';
+let googleDownUntil = 0;
+async function searchOsm(query, n = 5) {
+  const res = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=${n}&accept-language=id&addressdetails=0&q=${encodeURIComponent(query)}`);
+  if (!res.ok) throw new Error('osm ' + res.status);
+  return (await res.json()).map((p) => {
+    const parts = String(p.display_name || '').split(', ');
+    return { pid: '', name: p.name || parts[0] || '', address: parts.slice(1, 4).join(', '), rating: null, count: 0, src: 'osm', at: Date.now(),
+      uri: `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lon}` };
+  });
+}
 // Tambahkan nama kota tujuan ke pencarian supaya "Kiss Bridge" tidak ketemu tempat di negara lain.
 const withPlace = (q, place) => (place && !fold(q).includes(fold(place.split(',')[0])) ? `${q}, ${place}` : q);
 const gRating = (g) => (g && g.rating ? `★ ${g.rating.toFixed(1).replace('.', ',')}<small> · ${fmtN(g.count)} ulasan Google</small>` : '');
@@ -1392,7 +1405,7 @@ function renderPlaces(t) {
   const withRecs = t.places.filter((p) => (p.recs || []).length);
   const onlyRecs = state.placeFilter === 'recs' && withRecs.length;
   const saved = (onlyRecs ? withRecs : [...t.places]).sort((a, b) => (onlyRecs ? (b.recs.length - a.recs.length) : 0) || ratingValue(b) - ratingValue(a));
-  const missing = placesEnabled() ? t.places.concat(t.items).filter((x) => !x.g && x.type !== 'transport').length : 0;
+  const missing = placesEnabled() ? t.places.concat(t.items).filter((x) => noG(x) && x.type !== 'transport').length : 0;
   return `<div class="section-h"><h2>Tempat simpanan</h2><span class="muted num">${t.places.length}</span></div>
     <div class="row" style="gap:8px;margin-bottom:10px;flex-wrap:wrap">
       <button class="chip" data-a="placeFilter" data-k="all" aria-pressed="${!onlyRecs}">Semua</button>
@@ -1526,8 +1539,9 @@ async function fetchCatalogRatings(cat) {
   catQueue = false;
 }
 async function fillRatings(t) {
-  const list = t.places.concat(t.items).filter((x) => !x.g && x.type !== 'transport');
+  const list = t.places.concat(t.items).filter((x) => noG(x) && x.type !== 'transport');
   if (!list.length) return;
+  if (Date.now() < googleDownUntil) { toast('Kuota pencarian Google sedang habis. Coba lagi nanti.', null, null, 4000); return; }
   toast(`Mengambil rating ${list.length} tempat…`);
   let ok = 0;
   for (const x of list) {
@@ -1895,7 +1909,7 @@ document.addEventListener('change', (e) => {
 function readG(v) { try { return v.gplace ? JSON.parse(v.gplace) : null; } catch (e) { return null; } }
 function placeChosen(g) {
   return `<div class="pchosen"><div class="main"><b>${esc(g.name)}</b><div class="sub">${esc(g.address)}</div>
-    ${g.rating ? `<div class="star num">${gRating(g)}</div>` : '<div class="sub">Belum ada rating di Google</div>'}</div>
+    ${g.rating ? `<div class="star num">${gRating(g)}</div>` : `<div class="sub">${g.src === 'osm' ? 'Rating belum diambil (Google sedang penuh)' : 'Belum ada rating di Google'}</div>`}</div>
     <button type="button" class="x" data-a="placeClear" aria-label="Lepas pilihan">×</button></div>`;
 }
 let placeTimer = null, placeSeq = 0;
@@ -1905,19 +1919,26 @@ async function runPlaceSearch(immediate) {
   const q = inp.value.trim() || ($('#f-title') ? $('#f-title').value.trim() : '');
   if (q.length < 3 || isUrl(q)) return;
   const seq = ++placeSeq;
-  box.innerHTML = '<div class="sub" style="padding:8px 2px">Mencari di Google…</div>';
-  try {
-    const t = trip();
-    const dayEl = $('#f-day'); // form aktivitas: cari di kota hari itu; form tempat: di negara tujuan
-    const res = await searchPlaces(withPlace(q, t ? (dayEl ? ctxOf(t, dayEl.value, $('#f-at') && $('#f-at').value) : (t.country || t.place)) : ''));
-    if (seq !== placeSeq) return;
-    box.innerHTML = res.length ? res.map((g, i) => `<button type="button" class="presult" data-a="placePick" data-i="${i}">
-        <b>${esc(g.name)}</b><span class="sub">${esc(g.address)}</span>${g.rating ? `<span class="star num">${gRating(g)}</span>` : ''}</button>`).join('')
-      : '<div class="sub" style="padding:8px 2px">Tidak ditemukan. Coba nama lain.</div>';
-    box._results = res;
-  } catch (e) {
-    if (seq === placeSeq) box.innerHTML = '<div class="sub" style="padding:8px 2px">Pencarian Google gagal. Cek internet atau API key.</div>';
+  box.innerHTML = '<div class="sub" style="padding:8px 2px">Mencari…</div>';
+  const t = trip();
+  const dayEl = $('#f-day'); // form aktivitas: cari di kota hari itu; form tempat: di negara tujuan
+  const full = withPlace(q, t ? (dayEl ? ctxOf(t, dayEl.value, $('#f-at') && $('#f-at').value) : (t.country || t.place)) : '');
+  let res = null, note = '';
+  if (Date.now() > googleDownUntil) {
+    try { res = await Promise.race([searchPlaces(full), new Promise((_, no) => setTimeout(() => no(new Error('waktu habis')), 8000))]); }
+    catch (e) { googleDownUntil = Date.now() + 10 * 60 * 1000; console.warn('Google gagal, pakai cadangan', e); }
   }
+  if (res && !res.length) { try { const alt = await searchOsm(full); if (alt.length) { res = alt; note = 'Google tidak menemukan; hasil dari OpenStreetMap (tanpa rating).'; } } catch (e) { /* biarkan kosong */ } }
+  if (!res) {
+    try { res = await searchOsm(full); note = 'Pencarian Google sedang penuh; hasil dari OpenStreetMap (tanpa rating). Rating bisa diambil lagi nanti lewat tombol Ambil rating Google.'; }
+    catch (e) { if (seq === placeSeq) box.innerHTML = '<div class="sub" style="padding:8px 2px">Pencarian gagal. Cek internet, atau tempel link dari Google Maps di kolom Lokasi.</div>'; return; }
+  }
+  if (seq !== placeSeq) return;
+  box.innerHTML = (res.length ? res.map((g, i) => `<button type="button" class="presult" data-a="placePick" data-i="${i}">
+      <b>${esc(g.name)}</b><span class="sub">${esc(g.address)}</span>${g.rating ? `<span class="star num">${gRating(g)}</span>` : ''}</button>`).join('')
+    : '<div class="sub" style="padding:8px 2px">Tidak ditemukan. Coba nama lain.</div>')
+    + (note ? `<div class="sub" style="padding:6px 2px;font-size:12px">${esc(note)}</div>` : '');
+  box._results = res;
 }
 function readRatings(v) {
   const r = {};

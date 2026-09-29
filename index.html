@@ -119,6 +119,36 @@ button{cursor:pointer}
 .chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 14px;font-weight:600;font-size:14px}
 .chip[aria-pressed="true"]{background:var(--jade);border-color:var(--jade);color:var(--jade-ink)}
 .maplink{display:block;text-align:center;text-decoration:none}
+.stayrange{padding:8px 12px;min-height:54px}
+.rangetxt{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+.rangetxt>span{display:flex;flex-direction:column;font-weight:600;font-size:14.5px;line-height:1.25}
+.rangetxt small{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.rangetxt .arrow{color:var(--muted);font-weight:400}
+.nights{flex:0 0 auto;background:var(--violet-soft);color:var(--violet);border-radius:999px;padding:3px 10px;font-size:12.5px}
+.rsum{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--sunk);border-radius:12px;padding:10px 12px;margin-bottom:6px}
+.rsum>div{display:flex;flex-direction:column}
+.rsum>div:last-child{text-align:right}
+.rsum small{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.rsum b{font-size:15px}
+.rsum .rn{font-weight:800;color:var(--violet);font-size:14px}
+.rstep{font-size:13px;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.tripdot,.cday.trip::after{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--jade)}
+.cmonth{margin-bottom:14px}
+.cmhead{font-weight:800;font-size:15px;padding:8px 2px;position:sticky;top:0;background:var(--surface);z-index:1}
+.cgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px 0}
+.cwd{font-size:11px;color:var(--muted);text-align:center;padding:4px 0;font-weight:600}
+.cday{position:relative;height:42px;border:none;background:none;font-size:15px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
+.cday.trip::after{content:"";position:absolute;left:50%;bottom:5px;transform:translateX(-50%)}
+.cday.today{text-decoration:underline}
+.cday.mid{background:var(--violet-soft)}
+.cday.start,.cday.end{background:var(--violet);color:#fff;border-radius:10px}
+.cday.start.trip::after,.cday.end.trip::after{background:#fff}
+.psheet .foot .btn[disabled]{opacity:.5}
+.sheet.noanim{animation:none!important}
+.resv[role="button"]{cursor:pointer}
+.resv-night{background:var(--violet-soft);border-color:transparent;color:var(--ink)}
+.staymeta{font-size:12.5px;font-weight:600;color:var(--violet);margin-top:2px}
+.it.stayout .body::before{border-color:var(--violet);border-style:dashed}
 .picker{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:10px 12px;font-size:16px;text-align:left;color:var(--ink)}
 .picker svg{width:20px;height:20px;flex:0 0 auto;color:var(--muted)}
 .pscrim{z-index:25}
@@ -822,9 +852,56 @@ function renderPlan(t) {
   return strip + (days.length ? summary : '') + body + orphanHtml;
 }
 
+const isStayItem = (x) => x.type === 'stay' && x.dayEnd && x.dayEnd > x.day;
+const isStayBooking = (b) => b.kind === 'stay' && b.dateEnd && b.dateEnd > b.date;
+function stayLine(a, b, timeOut) {
+  const n = nightsOf(a, b);
+  return `${shortDate(a)} → ${shortDate(b)} · ${n} malam${timeOut ? ` · check-out ${esc(timeOut)}` : ''}`;
+}
+// Satu baris reservasi di tab Rencana; penginapan tampil di hari check-in, malam di antaranya, dan hari check-out.
+function resvRow(b, d) {
+  const pill = `<span class="pill s-${b.status}">${esc(label(BOOK_STATUS, b.status))}</span>`;
+  const code = b.code ? `<span class="code">${esc(b.code)}</span>` : '';
+  if (isStayBooking(b)) {
+    if (d === b.date) return `<div class="resv" data-a="editBooking" data-id="${b.id}" role="button" tabindex="0">${pill}<span><b>Check-in ${esc(b.time || STAY_IN)}</b> ${esc(b.title)} · ${b.nights || nightsOf(b.date, b.dateEnd)} malam</span>${code}</div>`;
+    if (d === b.dateEnd) return `<div class="resv" data-a="editBooking" data-id="${b.id}" role="button" tabindex="0">${pill}<span><b>Check-out ${esc(b.timeOut || STAY_OUT)}</b> ${esc(b.title)}</span>${code}</div>`;
+    return `<div class="resv resv-night" data-a="editBooking" data-id="${b.id}" role="button" tabindex="0"><span>Menginap di <b>${esc(b.title)}</b> · malam ke-${diffDays(b.date, d) + 1} dari ${nightsOf(b.date, b.dateEnd)}</span></div>`;
+  }
+  return `<div class="resv">${pill}<span><b>${esc(b.time || '')}</b> ${esc(b.title)}</span>${code}</div>`;
+}
+function renderCheckout(t, x) {
+  return `<div class="it stayout">
+    <div class="time">${esc(x.timeOut || STAY_OUT)}</div>
+    <div class="body">
+      <div class="itcard" data-a="editItem" data-id="${x.id}" role="button" tabindex="0">
+        <span class="pill t-stay">Check-out</span>
+        <div class="title">${esc(x.title)}</div>
+        <div class="loc">Menginap sejak ${shortDay(x.day)} · ${nightsOf(x.day, x.dayEnd)} malam</div>
+      </div>
+      <div class="acts">
+        <a class="go" href="${esc(mapsNav(t, x))}" target="_blank" rel="noopener">Navigasi</a>
+        <a href="${esc(mapsOpen(t, x))}" target="_blank" rel="noopener">Maps</a>
+      </div>
+    </div>
+  </div>`;
+}
+
+// Booking penginapan yang sama dengan aktivitas penginapan (nama & tanggal sama) cukup tampil sekali lewat aktivitasnya.
+const stayBookingFor = (t, x) => t.bookings.find((b) => isStayBooking(b) && b.date === x.day && b.dateEnd === x.dayEnd && fold(b.title) === fold(x.title));
+const bookingHasStayItem = (t, b) => t.items.some((x) => isStayItem(x) && x.day === b.date && x.dayEnd === b.dateEnd && fold(x.title) === fold(b.title));
+
 function renderDay(t, d, i) {
   const items = sortItems(t.items.filter((x) => x.day === d));
-  const resv = t.bookings.filter((b) => b.date === d);
+  const resv = t.bookings.filter((b) => (b.date === d || (isStayBooking(b) && b.date < d && d <= b.dateEnd)) && !(isStayBooking(b) && bookingHasStayItem(t, b)));
+  // penginapan: check-out otomatis di hari keluar (disisipkan sesuai jam), dan keterangan malam di antaranya
+  const outs = t.items.filter((x) => isStayItem(x) && x.dayEnd === d);
+  const nights = t.items.filter((x) => isStayItem(x) && x.day < d && d < x.dayEnd);
+  const rows = items.map((it) => ({ it }));
+  outs.forEach((x) => {
+    const vt = x.timeOut || STAY_OUT;
+    const idx = rows.findIndex((r) => r.it && r.it.time && r.it.time > vt);
+    rows.splice(idx < 0 ? rows.length : idx, 0, { out: x });
+  });
   const cost = items.reduce((s, x) => s + (x.cost ? idr(x.cost, x.cur) : 0), 0);
   const stops = items.map((x) => mapsQuery(t, x)).filter(Boolean);
   const route = mapsRoute(stops);
@@ -838,8 +915,9 @@ function renderDay(t, d, i) {
         ${items.some((x) => x.time) && items.length > 1 ? `<button class="btn ghost small" data-a="sortDay" data-d="${d}">Urut jam</button>` : ''}
       </div>
     </div>
-    ${resv.map((b) => `<div class="resv"><span class="pill s-${b.status}">${esc(label(BOOK_STATUS, b.status))}</span><span><b>${esc(b.time || '')}</b> ${esc(b.title)}</span>${b.code ? `<span class="code">${esc(b.code)}</span>` : ''}</div>`).join('')}
-    <div class="tl">${items.map((it) => renderItem(t, it)).join('')}</div>
+    ${resv.map((b) => resvRow(b, d)).join('')}
+    ${nights.map((x) => `<div class="resv resv-night" data-a="editItem" data-id="${x.id}" role="button" tabindex="0"><span>Menginap di <b>${esc(x.title)}</b> · malam ke-${diffDays(x.day, d) + 1} dari ${nightsOf(x.day, x.dayEnd)}</span></div>`).join('')}
+    <div class="tl">${rows.map((r) => (r.out ? renderCheckout(t, r.out) : renderItem(t, r.it))).join('')}</div>
     <div class="add"><button class="addbtn" data-a="addItem" data-d="${d}">+ Tambah di hari ini</button></div>
   </section>`;
 }
@@ -849,12 +927,14 @@ function renderItem(t, it, orphan) {
     <div class="time">${esc(it.time || '')}</div>
     <div class="body">
       <div class="itcard" data-a="editItem" data-id="${it.id}" role="button" tabindex="0">
-        <span class="pill t-${it.type}">${esc(label(ITEM_TYPES, it.type))}</span>${orphan ? ` <span class="muted" style="font-size:12px">${shortDate(it.day)}</span>` : ''}
+        <span class="pill t-${it.type}">${isStayItem(it) ? 'Check-in' : esc(label(ITEM_TYPES, it.type))}</span>${orphan ? ` <span class="muted" style="font-size:12px">${shortDate(it.day)}</span>` : ''}
         <div class="title">${esc(it.title)}</div>
+        ${isStayItem(it) ? `<div class="staymeta num">${stayLine(it.day, it.dayEnd, it.timeOut || STAY_OUT)}</div>` : ''}
+        ${isStayItem(it) && stayBookingFor(t, it) ? (() => { const b = stayBookingFor(t, it); return `<div class="row" style="gap:6px;margin-top:4px"><span class="pill s-${b.status}">Booking: ${esc(label(BOOK_STATUS, b.status))}</span>${b.code ? `<span class="code">${esc(b.code)}</span>` : ''}</div>`; })() : ''}
         ${it.location ? `<div class="loc">${isUrl(it.location) ? 'Link Google Maps tersimpan' : esc(it.location)}</div>` : ''}
         ${stars(it)}
         ${it.note ? `<div class="note">${esc(it.note)}</div>` : ''}
-        ${it.cost ? `<div class="cost num">${esc(moneyBoth(it.cost, it.cur))}</div>` : ''}
+        ${it.cost ? `<div class="cost num">${esc(moneyBoth(it.cost, it.cur))}${isStayItem(it) && it.perNight ? ` · ${esc(money(it.perNight, it.cur))}/malam` : ''}</div>` : ''}
       </div>
       <div class="acts">
         <a class="go" href="${esc(mapsNav(t, it))}" target="_blank" rel="noopener">Navigasi</a>
@@ -1062,7 +1142,7 @@ function renderBookings(t) {
       <div class="li"><div class="main">
         <div class="row" style="gap:6px"><span class="pill s-${b.status}">${esc(label(BOOK_STATUS, b.status))}</span><span class="muted" style="font-size:12.5px">${esc(label(BOOK_KINDS, b.kind))}</span></div>
         <div class="title" data-a="editBooking" data-id="${b.id}" role="button" tabindex="0" style="cursor:pointer;margin-top:4px">${esc(b.title)}</div>
-        <div class="sub num">${b.date ? dayLabel(b.date) : 'Tanpa tanggal'}${b.time ? ' · ' + esc(b.time) : ''}${b.price ? ' · ' + esc(moneyBoth(b.price, b.cur)) : ''}</div>
+        <div class="sub num">${isStayBooking(b) ? `${stayLine(b.date, b.dateEnd)} · check-in ${esc(b.time || STAY_IN)}, check-out ${esc(b.timeOut || STAY_OUT)}` : `${b.date ? dayLabel(b.date) : 'Tanpa tanggal'}${b.time ? ' · ' + esc(b.time) : ''}`}${b.price ? ' · ' + esc(moneyBoth(b.price, b.cur)) : ''}${isStayBooking(b) && b.perNight ? ` (${esc(money(b.perNight, b.cur))}/malam)` : ''}</div>
         ${b.note ? `<div class="sub">${esc(b.note)}</div>` : ''}
         <div class="acts">
           ${b.code ? `<button data-a="copy" data-text="${esc(b.code)}">Kode: <span class="code">${esc(b.code)}</span></button>` : ''}
@@ -1100,8 +1180,8 @@ function renderBudget(t) {
     ${list.length ? `<div class="card">${list.map((e) => `
       <div class="li" data-a="editExpense" data-id="${e.id}" role="button" tabindex="0" style="cursor:pointer"><div class="main">
         <div class="title">${esc(e.title)}</div>
-        <div class="sub">${esc(label(EXP_CATS, e.category))}${e.date ? ' · ' + shortDate(e.date) : ''}</div></div>
-        <div style="text-align:right"><b class="num">${esc(money(e.amount, e.cur))}</b>${e.cur === 'VND' ? `<div class="sub num">±Rp${fmtN(idr(e.amount, 'VND'))}</div>` : ''}</div>
+        <div class="sub">${esc(label(EXP_CATS, e.category))}${e.category === 'stay' && e.dateEnd ? ' · ' + stayLine(e.date, e.dateEnd) : e.date ? ' · ' + shortDate(e.date) : ''}</div></div>
+        <div style="text-align:right"><b class="num">${esc(money(e.amount, e.cur))}</b>${e.cur !== 'IDR' && rateOf(e.cur) ? `<div class="sub num">±Rp${fmtN(idr(e.amount, e.cur))}</div>` : ''}${e.category === 'stay' && e.perNight && e.nights ? `<div class="sub num">${esc(money(e.perNight, e.cur))}/malam</div>` : ''}</div>
       </div>`).join('')}</div>`
       : `<div class="empty">Catat setiap pengeluaran dalam VND atau IDR. Totalnya otomatis dikonversi ke rupiah.</div>`}`;
 }
@@ -1190,6 +1270,11 @@ function field(f) {
       </button>`;
     return `<div class="f"><label for="${id}-btn">${esc(f.label)}</label>${input}</div>`;
   }
+  else if (f.type === 'stayrange') {
+    input = `<input type="hidden" name="stayIn" id="f-stayIn" value="${esc(f.inVal || '')}"><input type="hidden" name="stayOut" id="f-stayOut" value="${esc(f.outVal || '')}">
+      <button type="button" class="picker stayrange" id="f-stay-btn" data-a="pickRange" aria-haspopup="dialog">${stayRangeLabel(f.inVal, f.outVal)}</button>`;
+    return `<div class="f"><label for="f-stay-btn">${esc(f.label)}</label>${input}</div>`;
+  }
   else if (f.type === 'citypick') {
     input = `<input type="hidden" name="${f.name}" id="${id}" value="${esc(v)}">
       <button type="button" class="picker" id="${id}-btn" data-a="pickCity" aria-haspopup="dialog">
@@ -1205,17 +1290,32 @@ function field(f) {
   const hint = f.hint ? `<small class="muted" style="font-size:12px">${placesEnabled() ? 'Ketik nama tempat, pilihan dari Google muncul otomatis beserta rating dan link Maps-nya.' : 'Bisa juga tempel link dari Google Maps (Bagikan → Salin link).'}</small>` : '';
   return `<div class="f"><label for="${id}">${esc(f.label)}</label>${input}${hint}</div>`;
 }
+// f.when = 'type=stay' / 'type!=stay' → kolom hanya tampil jika pilihan lain di form cocok.
+const fieldW = (f) => (f.when ? `<div data-when="${f.when}">${field(f)}</div>` : field(f));
+function applyWhen(form) {
+  if (!form) return;
+  form.querySelectorAll('[data-when]').forEach((el) => {
+    const m = el.dataset.when.match(/^(\w+)(!?=)(.*)$/); if (!m) return;
+    const ctl = form.elements[m[1]]; const val = ctl ? ctl.value : '';
+    el.hidden = m[2] === '=' ? val !== m[3] : val === m[3];
+  });
+  form.querySelectorAll('[data-money]').forEach(refreshMoneyHint);
+}
 function openForm({ title, fields, submit = 'Simpan', onSubmit, onDelete }) {
   const rows = []; let pair = [];
-  fields.forEach((f) => { if (f.half) { pair.push(f); if (pair.length === 2) { rows.push(`<div class="f2">${pair.map(field).join('')}</div>`); pair = []; } } else { if (pair.length) { rows.push(pair.map(field).join('')); pair = []; } rows.push(field(f)); } });
-  if (pair.length) rows.push(pair.map(field).join(''));
+  const flushPair = () => { if (!pair.length) return; const w = pair[0].when && pair.every((p) => p.when === pair[0].when) ? pair[0].when : null;
+    const inner = pair.map((p) => (w ? field(p) : fieldW(p))).join('');
+    rows.push(pair.length === 2 ? (w ? `<div class="f2" data-when="${w}">${inner}</div>` : `<div class="f2">${inner}</div>`) : (w ? `<div data-when="${w}">${inner}</div>` : inner)); pair = []; };
+  fields.forEach((f) => { if (f.half) { pair.push(f); if (pair.length === 2) flushPair(); } else { flushPair(); rows.push(fieldW(f)); } });
+  flushPair();
   sheetRoot.innerHTML = `<div class="scrim" data-a="scrim"><form class="sheet" id="sheetForm" novalidate role="dialog" aria-modal="true" aria-label="${esc(title)}">
     <div class="grab"></div><h2>${esc(title)}</h2>${rows.join('')}
     <div class="foot">${onDelete ? '<button type="button" class="btn danger" data-a="sheetDelete" data-confirm>Hapus</button>' : ''}
     <button type="button" class="btn ghost" data-a="closeSheet">Batal</button><button type="submit" class="btn">${esc(submit)}</button></div>
   </form></div>`;
   sheetSubmit = onSubmit; sheetDelete = onDelete || null;
-  const first = sheetRoot.querySelector('input,textarea');
+  applyWhen($('#sheetForm'));
+  const first = sheetRoot.querySelector('input:not([type=hidden]),textarea');
   if (first && !('ontouchstart' in window)) first.focus();
 }
 function openSheetHtml(title, html) {
@@ -1289,7 +1389,9 @@ function formatNumInput(el, typedSep) {
 function refreshMoneyHint(input) {
   const sel = input.form && input.form.querySelector(`[name="${input.dataset.money}"]`);
   const hint = document.getElementById(input.id + '-hint');
-  if (hint) hint.textContent = moneyHint(input.value, sel ? sel.value : 'IDR');
+  if (!hint) return;
+  const stay = stayCalcText(input.form, input);
+  hint.textContent = stay != null ? stay : moneyHint(input.value, sel ? sel.value : 'IDR');
 }
 // Teks angka dari luar ("1,250,000", "1.250.000", "12.5", "Rp 950.000") → digit + koma desimal.
 function normalizeNumberText(text, dec) {
@@ -1329,6 +1431,7 @@ document.addEventListener('paste', (e) => {
 });
 document.addEventListener('change', (e) => {
   if (e.target.matches && e.target.matches('[data-moneycur]')) { const inp = document.getElementById(e.target.dataset.moneycur); if (inp) refreshMoneyHint(inp); }
+  if (e.target.form && e.target.form.id === 'sheetForm' && e.target.tagName === 'SELECT') applyWhen(e.target.form);
 });
 function readG(v) { try { return v.gplace ? JSON.parse(v.gplace) : null; } catch (e) { return null; } }
 function placeChosen(g) {
@@ -1415,6 +1518,112 @@ function tripForm(t) {
     },
     onDelete: isNew ? null : () => { removeTrip(t.id); return 'silent'; },
   });
+}
+
+/* ---------- penginapan: check-in → check-out ----------
+ * Satu data penginapan menyimpan tanggal masuk & keluar. Di tab Rencana, hari check-out dan malam di antaranya
+ * ditampilkan otomatis, jadi tidak perlu input per hari. Jam default: check-in 14:00, check-out 12:00.
+ */
+const STAY_IN = '14:00', STAY_OUT = '12:00';
+const nightsOf = (a, b) => (a && b && b > a ? diffDays(a, b) : 0);
+const shortDay = (s) => { const d = parseD(s); return `${WD[d.getUTCDay()]}, ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`; };
+function stayRangeLabel(a, b) {
+  if (!a) return '<span class="muted">Pilih tanggal check-in & check-out</span>';
+  return `<span class="rangetxt"><span><small>Check-in</small>${shortDay(a)}</span><span class="arrow">→</span><span><small>Check-out</small>${b ? shortDay(b) : '…'}</span></span>
+    ${nightsOf(a, b) ? `<b class="nights">${nightsOf(a, b)} malam</b>` : ''}`;
+}
+// Kolom tambahan penginapan untuk form aktivitas/booking/pengeluaran. `on` = syarat tampil (mis. 'type=stay').
+function stayFields(on, x, fallbackDay) {
+  const a = (x && x.stayIn) || fallbackDay || '', b = (x && x.stayOut) || (a ? addDays(a, 1) : '');
+  return [
+    { name: 'stay', type: 'stayrange', label: 'Tanggal menginap', inVal: a, outVal: b, when: on },
+    { name: 'timeIn', label: 'Jam check-in', type: 'time', value: (x && x.timeIn) || STAY_IN, half: true, when: on },
+    { name: 'timeOut', label: 'Jam check-out', type: 'time', value: (x && x.timeOut) || STAY_OUT, half: true, when: on },
+  ];
+}
+const priceModeField = (on, x) => ({ name: 'priceMode', label: 'Harga yang diisi', type: 'select', value: (x && x.priceMode) || 'night', options: [['night', 'Per malam'], ['total', 'Total seluruh malam']], when: on });
+function readStay(v) {
+  const nights = nightsOf(v.stayIn, v.stayOut);
+  return { stayIn: v.stayIn, stayOut: v.stayOut, nights, timeIn: v.timeIn || STAY_IN, timeOut: v.timeOut || STAY_OUT };
+}
+// Harga penginapan → total (disimpan) + per malam
+function stayPrice(amount, mode, nights) {
+  if (!amount || !nights) return { total: amount, perNight: amount };
+  return mode === 'total' ? { total: amount, perNight: amount / nights } : { total: amount * nights, perNight: amount };
+}
+function stayCalcText(form, amountInput) {
+  const pm = form && form.elements.priceMode;
+  if (!pm || pm.closest('[data-when]')?.hidden) return null;
+  const nights = nightsOf(form.elements.stayIn?.value, form.elements.stayOut?.value);
+  const n = num(amountInput.value);
+  const cur = form.querySelector(`[name="${amountInput.dataset.money}"]`)?.value || 'IDR';
+  if (!nights) return 'Pilih tanggal check-in dan check-out dulu';
+  if (!n) return `${nights} malam`;
+  const { total, perNight } = stayPrice(n, pm.value, nights);
+  const conv = cur !== 'IDR' && rateOf(cur) ? ` ≈ Rp${fmtN(idr(total, cur))}` : '';
+  return pm.value === 'total'
+    ? `${money(total, cur)} untuk ${nights} malam = ${money(perNight, cur)}/malam${conv}`
+    : `${nights} malam × ${money(perNight, cur)} = ${money(total, cur)}${conv}`;
+}
+
+/* Kalender rentang: ketuk tanggal check-in, lalu check-out. */
+let rangeSel = { a: '', b: '' };
+function openRangePicker() {
+  const a = $('#f-stayIn')?.value || '', b = $('#f-stayOut')?.value || '';
+  rangeSel = { a, b };
+  renderRangePicker(true);
+}
+function renderRangePicker(first) {
+  const t = trip();
+  const { a, b } = rangeSel;
+  const anchor = a || (t && t.start) || todayStr();
+  const lastRef = [b, t && t.end, anchor].filter(Boolean).sort().pop();
+  // bulan yang ditampilkan: dari bulan anchor sampai bulan terakhir trip/pilihan + 1 bulan
+  const months = []; let d = parseD(anchor.slice(0, 8) + '01');
+  const stop = parseD(lastRef.slice(0, 8) + '01'); stop.setUTCMonth(stop.getUTCMonth() + 1);
+  while (d <= stop && months.length < 6) { months.push(fmtD(d)); d.setUTCMonth(d.getUTCMonth() + 1); }
+  const inTrip = (s) => t && s >= t.start && s <= t.end;
+  const MONL = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  const grid = months.map((m) => {
+    const M = parseD(m); const y = M.getUTCFullYear(), mo = M.getUTCMonth();
+    const lead = (M.getUTCDay() + 6) % 7; // Senin di kolom pertama
+    const days = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
+    let cells = '<span></span>'.repeat(lead);
+    for (let i = 1; i <= days; i++) {
+      const s = fmtD(new Date(Date.UTC(y, mo, i)));
+      const cls = [s === a ? 'start' : '', s === b ? 'end' : '', a && b && s > a && s < b ? 'mid' : '', inTrip(s) ? 'trip' : '', s === todayStr() ? 'today' : ''].filter(Boolean).join(' ');
+      cells += `<button type="button" class="cday ${cls}" data-a="rangeDay" data-d="${s}" aria-label="${dayLabel(s)}">${i}</button>`;
+    }
+    return `<div class="cmonth"><div class="cmhead">${MONL[mo]} ${y}</div><div class="cgrid">${['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'].map((w) => `<span class="cwd">${w}</span>`).join('')}${cells}</div></div>`;
+  }).join('');
+  const n = nightsOf(a, b);
+  const step = !a || (a && b) ? 'Ketuk tanggal check-in' : 'Sekarang ketuk tanggal check-out';
+  const scroller = $('#rangeList'); const keep = scroller ? scroller.scrollTop : 0;
+  pickerRoot.innerHTML = `<div class="scrim pscrim" data-a="pickerScrim"><div class="sheet psheet ${first ? '' : 'noanim'}" role="dialog" aria-modal="true" aria-label="Pilih tanggal menginap">
+    <div class="grab"></div>
+    <div class="row" style="justify-content:space-between;margin-bottom:6px"><h2 style="margin:0">Tanggal menginap</h2><button type="button" class="btn ghost small" data-a="pickerClose">Tutup</button></div>
+    <div class="rsum"><div><small>Check-in</small><b>${a ? shortDay(a) : '—'}</b></div><div class="rn">${n ? `${n} malam` : ''}</div><div><small>Check-out</small><b>${b ? shortDay(b) : '—'}</b></div></div>
+    <div class="rstep">${step}${t ? ' · <span class="tripdot"></span> tanggal trip' : ''}</div>
+    <div class="plist" id="rangeList">${grid}</div>
+    <div class="foot" style="padding:10px 0 calc(12px + env(safe-area-inset-bottom,0px))"><button type="button" class="btn ghost" data-a="pickerClose">Batal</button>
+      <button type="button" class="btn" data-a="rangeApply" ${n ? '' : 'disabled'}>${n ? `Pakai · ${n} malam` : 'Pilih 2 tanggal'}</button></div>
+  </div></div>`;
+  const list = $('#rangeList');
+  if (first) { const target = list.querySelector('.cday.start') || list.querySelector('.cday.trip'); if (target) list.scrollTop = target.closest('.cmonth').offsetTop - list.offsetTop; }
+  else list.scrollTop = keep;
+}
+function pickRangeDay(s) {
+  const { a, b } = rangeSel;
+  if (!a || b || s <= a) rangeSel = { a: s, b: '' };
+  else rangeSel = { a, b: s };
+  renderRangePicker(false);
+}
+function applyRange() {
+  const { a, b } = rangeSel; if (!nightsOf(a, b)) return;
+  $('#f-stayIn').value = a; $('#f-stayOut').value = b;
+  $('#f-stay-btn').innerHTML = stayRangeLabel(a, b);
+  closeCountryPicker();
+  const form = $('#sheetForm'); if (form) form.querySelectorAll('[data-money]').forEach(refreshMoneyHint);
 }
 
 /* ---------- pemilih negara: daftar lengkap A–Z di atas form ---------- */
@@ -1573,21 +1782,32 @@ function itemForm(t, it, day) {
   const isNew = !it;
   const days = dayOptions(t);
   if (!isNew && !days.some((d) => d[0] === it.day)) days.unshift([it.day, `${dayLabel(it.day)} (di luar trip)`]);
+  const stayX = it && it.type === 'stay' ? { stayIn: it.day, stayOut: it.dayEnd, timeIn: it.time, timeOut: it.timeOut, priceMode: it.priceMode } : null;
+  const costShown = it && it.type === 'stay' && it.priceMode !== 'total' && it.perNight ? it.perNight : it?.cost;
   openForm({
     title: isNew ? 'Aktivitas baru' : 'Ubah aktivitas',
     fields: [
-      { name: 'title', label: 'Nama', value: it?.title, placeholder: 'Sunset di Kiss Bridge', required: true },
-      { name: 'day', label: 'Hari', type: 'select', options: days, value: it?.day || day || days[0]?.[0], half: true },
-      { name: 'time', label: 'Jam', type: 'time', value: it?.time, half: true },
+      { name: 'title', label: 'Nama', value: it?.title, placeholder: 'Sunset di Kiss Bridge / nama hotel', required: true },
       { name: 'type', label: 'Jenis', type: 'select', options: ITEM_TYPES, value: it?.type || 'activity' },
+      { name: 'day', label: 'Hari', type: 'select', options: days, value: it?.day || day || days[0]?.[0], half: true, when: 'type!=stay' },
+      { name: 'time', label: 'Jam', type: 'time', value: it?.time, half: true, when: 'type!=stay' },
+      ...stayFields('type=stay', stayX, day || it?.day || days[0]?.[0]),
       { name: 'location', label: 'Lokasi', type: 'place', value: it?.location, g: it?.g, placeholder: 'Kiss Bridge', hint: true },
       { name: 'note', label: 'Catatan', type: 'textarea', value: it?.note, placeholder: 'Tips, jam buka, apa yang dibawa…' },
-      { name: 'cost', label: 'Perkiraan biaya', type: 'money', value: it?.cost, cur: it?.cur },
+      priceModeField('type=stay', stayX),
+      { name: 'cost', label: 'Perkiraan biaya', type: 'money', value: costShown, cur: it?.cur },
     ],
     onSubmit(v) {
-      const data = { title: v.title, day: v.day, time: v.time, type: v.type, location: v.location, note: v.note, cost: num(v.cost), cur: v.costCur || t.cur, g: readG(v) };
-      if (isNew) t.items.push(Object.assign({ id: uid(), done: false }, data, { order: insertOrder(t, v.day, v.time) }));
-      else { const moved = it.day !== v.day; Object.assign(it, data); if (moved) it.order = insertOrder(t, v.day, v.time, it.id); }
+      const data = { title: v.title, day: v.day, time: v.time, type: v.type, location: v.location, note: v.note, cost: num(v.cost), cur: v.costCur || t.cur, g: readG(v),
+        dayEnd: null, timeOut: null, nights: null, perNight: null, priceMode: null };
+      if (v.type === 'stay') {
+        const s = readStay(v);
+        if (!s.nights) { toast('Pilih tanggal check-in dan check-out'); $('#f-stay-btn').click(); return false; }
+        const p = stayPrice(data.cost, v.priceMode, s.nights);
+        Object.assign(data, { day: s.stayIn, dayEnd: s.stayOut, time: s.timeIn, timeOut: s.timeOut, nights: s.nights, priceMode: v.priceMode, cost: p.total, perNight: p.perNight });
+      }
+      if (isNew) t.items.push(Object.assign({ id: uid(), done: false }, data, { order: insertOrder(t, data.day, data.time) }));
+      else { const moved = it.day !== data.day; Object.assign(it, data); if (moved) it.order = insertOrder(t, data.day, data.time, it.id); }
     },
     onDelete: isNew ? null : () => { t.items = t.items.filter((x) => x.id !== it.id); },
   });
@@ -1640,22 +1860,33 @@ function scheduleForm(t, p) {
 
 function bookingForm(t, b) {
   const isNew = !b;
+  const stayX = b && b.kind === 'stay' ? { stayIn: b.date, stayOut: b.dateEnd, timeIn: b.time, timeOut: b.timeOut, priceMode: b.priceMode } : null;
+  const priceShown = b && b.kind === 'stay' && b.priceMode !== 'total' && b.perNight ? b.perNight : b?.price;
   openForm({
     title: isNew ? 'Booking baru' : 'Ubah booking',
     fields: [
-      { name: 'title', label: 'Nama', value: b?.title, placeholder: 'Tiket Kiss of the Sea', required: true },
+      { name: 'title', label: 'Nama', value: b?.title, placeholder: 'Tiket Kiss of the Sea / nama hotel', required: true },
       { name: 'kind', label: 'Jenis', type: 'select', options: BOOK_KINDS, value: b?.kind || 'ticket', half: true },
       { name: 'status', label: 'Status', type: 'select', options: BOOK_STATUS, value: b?.status || 'todo', half: true },
-      { name: 'date', label: 'Tanggal', type: 'date', value: b?.date, half: true },
-      { name: 'time', label: 'Jam', type: 'time', value: b?.time, half: true },
+      { name: 'date', label: 'Tanggal', type: 'date', value: b?.date, half: true, when: 'kind!=stay' },
+      { name: 'time', label: 'Jam', type: 'time', value: b?.time, half: true, when: 'kind!=stay' },
+      ...stayFields('kind=stay', stayX, b?.date || t.start),
       { name: 'code', label: 'Kode konfirmasi / nomor booking', value: b?.code },
-      { name: 'price', label: 'Harga', type: 'money', value: b?.price, cur: b?.cur },
+      priceModeField('kind=stay', stayX),
+      { name: 'price', label: 'Harga', type: 'money', value: priceShown, cur: b?.cur },
       { name: 'link', label: 'Link pemesanan', type: 'url', value: b?.link, placeholder: 'https://' },
       { name: 'note', label: 'Catatan', type: 'textarea', value: b?.note },
     ],
     onSubmit(v) {
       let link = v.link; if (link && !/^https?:\/\//i.test(link)) link = 'https://' + link;
-      const data = { title: v.title, kind: v.kind, status: v.status, date: v.date, time: v.time, code: v.code, price: num(v.price), cur: v.priceCur || 'VND', link, note: v.note };
+      const data = { title: v.title, kind: v.kind, status: v.status, date: v.date, time: v.time, code: v.code, price: num(v.price), cur: v.priceCur || 'VND', link, note: v.note,
+        dateEnd: null, timeOut: null, nights: null, perNight: null, priceMode: null };
+      if (v.kind === 'stay') {
+        const s = readStay(v);
+        if (!s.nights) { toast('Pilih tanggal check-in dan check-out'); $('#f-stay-btn').click(); return false; }
+        const p = stayPrice(data.price, v.priceMode, s.nights);
+        Object.assign(data, { date: s.stayIn, dateEnd: s.stayOut, time: s.timeIn, timeOut: s.timeOut, nights: s.nights, priceMode: v.priceMode, price: p.total, perNight: p.perNight });
+      }
       if (isNew) t.bookings.push(Object.assign({ id: uid() }, data)); else Object.assign(b, data);
     },
     onDelete: isNew ? null : () => { t.bookings = t.bookings.filter((x) => x.id !== b.id); },
@@ -1665,17 +1896,28 @@ function bookingForm(t, b) {
 function expenseForm(t, e) {
   const isNew = !e;
   const today = todayStr();
+  const defDay = e?.date || (today >= t.start && today <= t.end ? today : t.start);
+  const stayX = e && e.category === 'stay' ? { stayIn: e.date, stayOut: e.dateEnd, priceMode: e.priceMode } : null;
+  const amountShown = e && e.category === 'stay' && e.priceMode !== 'total' && e.perNight ? e.perNight : e?.amount;
   openForm({
     title: isNew ? 'Pengeluaran baru' : 'Ubah pengeluaran',
     fields: [
-      { name: 'title', label: 'Untuk apa', value: e?.title, placeholder: 'Grab ke VinWonders', required: true },
-      { name: 'amount', label: 'Jumlah', type: 'money', value: e?.amount, cur: e?.cur },
-      { name: 'category', label: 'Kategori', type: 'select', options: EXP_CATS, value: e?.category || 'food', half: true },
-      { name: 'date', label: 'Tanggal', type: 'date', value: e?.date || (today >= t.start && today <= t.end ? today : t.start), half: true },
+      { name: 'title', label: 'Untuk apa', value: e?.title, placeholder: 'Grab ke VinWonders / nama hotel', required: true },
+      { name: 'category', label: 'Kategori', type: 'select', options: EXP_CATS, value: e?.category || 'food' },
+      { name: 'date', label: 'Tanggal', type: 'date', value: defDay, when: 'category!=stay' },
+      stayFields('category=stay', stayX, defDay)[0],
+      priceModeField('category=stay', stayX),
+      { name: 'amount', label: 'Jumlah', type: 'money', value: amountShown, cur: e?.cur },
     ],
     onSubmit(v) {
-      const amount = num(v.amount); if (!amount) { toast('Isi jumlahnya'); return false; }
-      const data = { title: v.title, amount, cur: v.amountCur || 'VND', category: v.category, date: v.date };
+      let amount = num(v.amount); if (!amount) { toast('Isi jumlahnya'); return false; }
+      const data = { title: v.title, amount, cur: v.amountCur || 'VND', category: v.category, date: v.date, dateEnd: null, nights: null, perNight: null, priceMode: null };
+      if (v.category === 'stay') {
+        const s = readStay(v);
+        if (!s.nights) { toast('Pilih tanggal check-in dan check-out'); $('#f-stay-btn').click(); return false; }
+        const p = stayPrice(amount, v.priceMode, s.nights);
+        Object.assign(data, { date: s.stayIn, dateEnd: s.stayOut, nights: s.nights, priceMode: v.priceMode, amount: p.total, perNight: p.perNight });
+      }
       if (isNew) t.expenses.push(Object.assign({ id: uid() }, data)); else Object.assign(e, data);
     },
     onDelete: isNew ? null : () => { t.expenses = t.expenses.filter((x) => x.id !== e.id); },
@@ -1756,7 +1998,8 @@ function phuQuocTemplate(start) {
   const ST = 'Sunset Town, An Thoi, Phu Quoc';
   const items = [
     I(0, '17:50', 'transport', 'Tiba Bandara Phu Quoc (PQC)', 'Phu Quoc International Airport', 'Grab tidak selalu ada. Minta hotel menjemput atau pesan taksi (mygo/becar) sebelum mendarat. ±25 menit ke Sunset Town.'),
-    I(0, '18:20', 'stay', 'Check-in Merci Hotel Sunset Town', 'Merci Hotel, 167 Milan St, Sunset Town, An Thoi', 'Minta kamar dengan balkon menghadap area fireworks. Tanpa sarapan.'),
+    Object.assign(I(0, '18:20', 'stay', 'Merci Hotel Sunset Town', 'Merci Hotel, 167 Milan St, Sunset Town, An Thoi', 'Minta kamar dengan balkon menghadap area fireworks. Tanpa sarapan. Saat check-out, koper bisa dititip di lobi.'),
+      { dayEnd: D(3), timeOut: '11:00', nights: 3 }),
     I(0, '18:50', 'food', 'Makan malam di Sunset Town', 'VuiFest Bazaar, ' + ST, 'Opsi: Sarah Restaurant (halal), RuNam Cafe, Sun Bavaria GastroPub. ±150–300 ribu VND per orang.'),
     I(0, '19:35', 'activity', 'Symphony of the Sea', 'Kiss Bridge, ' + ST, 'Gratis dari Kiss Bridge. Datang 10 menit lebih awal.'),
     I(0, '20:15', 'photo', 'Foto malam: Cổng Gavi, Cầu Phao, Cổng Trời', ST, 'Semua dalam radius ±400 m, jalan kaki.'),
@@ -1779,7 +2022,6 @@ function phuQuocTemplate(start) {
     I(2, '21:00', 'activity', 'Kiss of the Sea (show lengkap)', 'Kiss of the Sea, ' + ST, 'Hari Selasa tanpa live performer. Cek harinya.'),
     I(3, '07:30', 'photo', 'Foto pagi: Cầu Phao, Cổng Gavi, Kiss Bridge', ST, 'Sepi dan cahaya lembut.'),
     I(3, '09:30', 'food', 'Brunch: bún quậy, bánh tráng trộn, es kelapa', ST),
-    I(3, '11:00', 'stay', 'Check-out, titip koper di lobi', 'Merci Hotel, Sunset Town', 'Check-out resmi 11:00.'),
     I(3, '11:30', 'activity', 'Waktu bebas: Sao Beach / oleh-oleh / An Thoi', 'Sao Beach, Phu Quoc'),
     I(3, '15:20', 'transport', 'Berangkat ke Bandara PQC', 'Phu Quoc International Airport', 'Flight 17:16, batas check-in ±16:31.'),
   ];
@@ -1791,7 +2033,7 @@ function phuQuocTemplate(start) {
       { id: uid(), title: 'Khem Beach (Bãi Kem)', type: 'activity', location: 'Khem Beach, Phu Quoc', note: 'Pasir putih, terbaik 16:00–17:30. ±15–20 menit dari Sunset Town.' },
     ],
     bookings: [
-      { id: uid(), kind: 'stay', title: 'Merci Hotel Sunset Town', status: 'todo', date: D(0), time: '14:00', code: '', price: 0, cur: 'VND', link: '', note: 'Check-in 14:00, check-out 11:00.' },
+      { id: uid(), kind: 'stay', title: 'Merci Hotel Sunset Town', status: 'todo', date: D(0), dateEnd: D(3), time: '14:00', timeOut: '11:00', nights: 3, code: '', price: 0, cur: 'VND', link: '', note: '' },
       { id: uid(), kind: 'transport', title: 'Jemputan bandara PQC → hotel', status: 'todo', date: D(0), time: '17:50', code: '', price: 0, cur: 'VND', link: '', note: 'Via WhatsApp staf hotel.' },
       { id: uid(), kind: 'ticket', title: 'Cable car Hon Thom + Aquatopia', status: 'todo', date: D(1), time: '08:30', code: '', price: 0, cur: 'VND', link: 'https://sunset-town.com', note: 'Combo dengan makan siang lebih hemat.' },
       { id: uid(), kind: 'ticket', title: 'Tiket VinWonders', status: 'todo', date: D(2), time: '09:00', code: '', price: 950000, cur: 'VND', link: 'https://vinwonders.com', note: '' },
@@ -1873,6 +2115,9 @@ const actions = {
   setCity(d) { const t = trip(); cityForm(t, d.d || t.start); },
   pickCountry() { openCountryPicker(); },
   pickCity() { openCityPicker(); },
+  pickRange() { openRangePicker(); },
+  rangeDay(d) { pickRangeDay(d.d); },
+  rangeApply() { applyRange(); },
   cityChosen(d) { chooseCity(d.v || ''); },
   countryChosen(d) { chooseCountry(d.code); },
   pickerClose() { closeCountryPicker(); },

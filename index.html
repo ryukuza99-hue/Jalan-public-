@@ -119,6 +119,24 @@ button{cursor:pointer}
 .chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 14px;font-weight:600;font-size:14px}
 .chip[aria-pressed="true"]{background:var(--jade);border-color:var(--jade);color:var(--jade-ink)}
 .maplink{display:block;text-align:center;text-decoration:none}
+.picker{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:10px 12px;font-size:16px;text-align:left;color:var(--ink)}
+.picker svg{width:20px;height:20px;flex:0 0 auto;color:var(--muted)}
+.pscrim{z-index:25}
+.psheet{display:flex;flex-direction:column;height:88vh;max-height:88vh;overflow:hidden;padding-bottom:0}
+.pchips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:8px;flex:0 0 auto}
+.pchips::-webkit-scrollbar{display:none}
+.pchips .chip{flex:0 0 auto}
+.palpha{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;padding-bottom:6px;border-bottom:1px solid var(--line);flex:0 0 auto}
+.palpha::-webkit-scrollbar{display:none}
+.palpha button{flex:0 0 auto;min-width:30px;height:30px;border:none;background:var(--sunk);border-radius:7px;font-weight:700;font-size:13px;color:var(--ink)}
+.plist{flex:1;overflow-y:auto;padding-bottom:calc(20px + env(safe-area-inset-bottom,0px));-webkit-overflow-scrolling:touch}
+.pletter{position:sticky;top:0;background:var(--surface);font-size:12px;font-weight:800;color:var(--jade);padding:8px 4px 4px;letter-spacing:.06em}
+.prow{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;border:none;border-bottom:1px solid var(--line);background:none;padding:11px 4px;text-align:left;font-size:15px;color:var(--ink)}
+.prow small{display:block;font-size:12px;color:var(--muted)}
+.prow b{font-size:12px;color:var(--muted);font-weight:600}
+.prow.on{background:var(--jade-soft)}
+.prow.on b{color:var(--jade)}
+.pempty{padding:24px 8px;text-align:center;color:var(--muted)}
 .armed{background:var(--amber-soft)!important;color:var(--amber)!important;border-color:var(--amber)!important}
 .tripcard{position:relative}
 .tripcard .trip h3{padding-right:78px}
@@ -258,15 +276,95 @@ const ITEM_TYPES = [['activity', 'Aktivitas'], ['food', 'Makan'], ['transport', 
 const BOOK_KINDS = [['flight', 'Penerbangan'], ['stay', 'Penginapan'], ['ticket', 'Tiket/aktivitas'], ['transport', 'Transport'], ['food', 'Restoran'], ['other', 'Lainnya']];
 const BOOK_STATUS = [['todo', 'Belum dipesan'], ['booked', 'Sudah dipesan'], ['confirmed', 'Terkonfirmasi']];
 const EXP_CATS = [['food', 'Makan'], ['transport', 'Transport'], ['stay', 'Penginapan'], ['activity', 'Aktivitas & tiket'], ['shopping', 'Belanja'], ['other', 'Lainnya']];
-const CURRENCIES = [['VND', 'Dong Vietnam (VND)', '₫'], ['THB', 'Baht Thailand (THB)', '฿'], ['SGD', 'Dolar Singapura (SGD)', 'S$'], ['MYR', 'Ringgit Malaysia (MYR)', 'RM'],
-  ['JPY', 'Yen Jepang (JPY)', '¥'], ['KRW', 'Won Korea (KRW)', '₩'], ['CNY', 'Yuan Tiongkok (CNY)', 'CN¥'], ['PHP', 'Peso Filipina (PHP)', '₱'],
-  ['USD', 'Dolar AS (USD)', 'US$'], ['EUR', 'Euro (EUR)', '€'], ['AUD', 'Dolar Australia (AUD)', 'A$'], ['SAR', 'Riyal Saudi (SAR)', 'SR']];
-const SYMBOL = Object.fromEntries(CURRENCIES.map((c) => [c[0], c[2]]));
-// Negara tujuan → mata uang otomatis. Negara lain tetap bisa diketik bebas.
-const COUNTRIES = [['Vietnam', 'VND'], ['Thailand', 'THB'], ['Singapura', 'SGD'], ['Malaysia', 'MYR'], ['Jepang', 'JPY'], ['Korea Selatan', 'KRW'],
-  ['Tiongkok', 'CNY'], ['Filipina', 'PHP'], ['Arab Saudi', 'SAR'], ['Australia', 'AUD'], ['Amerika Serikat', 'USD'], ['Indonesia', 'IDR'],
-  ['Prancis', 'EUR'], ['Italia', 'EUR'], ['Jerman', 'EUR'], ['Belanda', 'EUR'], ['Spanyol', 'EUR'], ['Swiss', 'EUR']];
-const countryCur = (name) => { const c = COUNTRIES.find((x) => fold(x[0]) === fold(name)); return c ? c[1] : null; };
+/*
+ * Semua negara (kode ISO) → mata uang utama. Nama negara & mata uang dalam Bahasa Indonesia
+ * diambil dari browser (Intl.DisplayNames), jadi daftar ini cukup berisi kode.
+ */
+const COUNTRY_CUR = {
+  AF: 'AFN', AL: 'ALL', DZ: 'DZD', AD: 'EUR', AO: 'AOA', AG: 'XCD', AR: 'ARS', AM: 'AMD', AU: 'AUD', AT: 'EUR', AZ: 'AZN',
+  BS: 'BSD', BH: 'BHD', BD: 'BDT', BB: 'BBD', BY: 'BYN', BE: 'EUR', BZ: 'BZD', BJ: 'XOF', BT: 'BTN', BO: 'BOB', BA: 'BAM',
+  BW: 'BWP', BR: 'BRL', BN: 'BND', BG: 'EUR', BF: 'XOF', BI: 'BIF', CV: 'CVE', KH: 'KHR', CM: 'XAF', CA: 'CAD', CF: 'XAF',
+  TD: 'XAF', CL: 'CLP', CN: 'CNY', CO: 'COP', KM: 'KMF', CG: 'XAF', CD: 'CDF', CR: 'CRC', CI: 'XOF', HR: 'EUR', CU: 'CUP',
+  CY: 'EUR', CZ: 'CZK', DK: 'DKK', DJ: 'DJF', DM: 'XCD', DO: 'DOP', EC: 'USD', EG: 'EGP', SV: 'USD', GQ: 'XAF', ER: 'ERN',
+  EE: 'EUR', SZ: 'SZL', ET: 'ETB', FJ: 'FJD', FI: 'EUR', FR: 'EUR', GA: 'XAF', GM: 'GMD', GE: 'GEL', DE: 'EUR', GH: 'GHS',
+  GR: 'EUR', GD: 'XCD', GT: 'GTQ', GN: 'GNF', GW: 'XOF', GY: 'GYD', HT: 'HTG', HN: 'HNL', HK: 'HKD', HU: 'HUF', IS: 'ISK',
+  IN: 'INR', ID: 'IDR', IR: 'IRR', IQ: 'IQD', IE: 'EUR', IL: 'ILS', IT: 'EUR', JM: 'JMD', JP: 'JPY', JO: 'JOD', KZ: 'KZT',
+  KE: 'KES', KI: 'AUD', KP: 'KPW', KR: 'KRW', XK: 'EUR', KW: 'KWD', KG: 'KGS', LA: 'LAK', LV: 'EUR', LB: 'LBP', LS: 'LSL',
+  LR: 'LRD', LY: 'LYD', LI: 'CHF', LT: 'EUR', LU: 'EUR', MO: 'MOP', MG: 'MGA', MW: 'MWK', MY: 'MYR', MV: 'MVR', ML: 'XOF',
+  MT: 'EUR', MH: 'USD', MR: 'MRU', MU: 'MUR', MX: 'MXN', FM: 'USD', MD: 'MDL', MC: 'EUR', MN: 'MNT', ME: 'EUR', MA: 'MAD',
+  MZ: 'MZN', MM: 'MMK', NA: 'NAD', NR: 'AUD', NP: 'NPR', NL: 'EUR', NZ: 'NZD', NI: 'NIO', NE: 'XOF', NG: 'NGN', MK: 'MKD',
+  NO: 'NOK', OM: 'OMR', PK: 'PKR', PW: 'USD', PS: 'ILS', PA: 'USD', PG: 'PGK', PY: 'PYG', PE: 'PEN', PH: 'PHP', PL: 'PLN',
+  PT: 'EUR', QA: 'QAR', RO: 'RON', RU: 'RUB', RW: 'RWF', KN: 'XCD', LC: 'XCD', VC: 'XCD', WS: 'WST', SM: 'EUR', ST: 'STN',
+  SA: 'SAR', SN: 'XOF', RS: 'RSD', SC: 'SCR', SL: 'SLE', SG: 'SGD', SK: 'EUR', SI: 'EUR', SB: 'SBD', SO: 'SOS', ZA: 'ZAR',
+  SS: 'SSP', ES: 'EUR', LK: 'LKR', SD: 'SDG', SR: 'SRD', SE: 'SEK', CH: 'CHF', SY: 'SYP', TW: 'TWD', TJ: 'TJS', TZ: 'TZS',
+  TH: 'THB', TL: 'USD', TG: 'XOF', TO: 'TOP', TT: 'TTD', TN: 'TND', TR: 'TRY', TM: 'TMT', TV: 'AUD', UG: 'UGX', UA: 'UAH',
+  AE: 'AED', GB: 'GBP', US: 'USD', UY: 'UYU', UZ: 'UZS', VU: 'VUV', VA: 'EUR', VE: 'VES', VN: 'VND', YE: 'YER', ZM: 'ZMW', ZW: 'USD',
+};
+const displayNames = (lang, type) => { try { return new Intl.DisplayNames([lang], { type }); } catch (e) { return { of: (c) => c }; } };
+const dnRegionId = displayNames('id', 'region'), dnRegionEn = displayNames('en', 'region'), dnCurId = displayNames('id', 'currency');
+// [{ code, name (Indonesia), en, cur }] urut A–Z
+const COUNTRIES = Object.entries(COUNTRY_CUR)
+  .map(([code, cur]) => ({ code, cur, name: dnRegionId.of(code) || code, en: dnRegionEn.of(code) || code }))
+  .sort((a, b) => a.name.localeCompare(b.name, 'id'));
+const findCountry = (name) => { const f = fold(name); return f ? COUNTRIES.find((c) => fold(c.name) === f || fold(c.en) === f || c.code.toLowerCase() === f) || null : null; };
+const countryCur = (name) => { const c = findCountry(name); return c ? c.cur : null; };
+const POPULAR = ['VN', 'TH', 'SG', 'MY', 'JP', 'KR', 'SA', 'AU'];
+// Kota tujuan wisata per negara (nama umum yang dikenali Google Maps). Kota lain dicari lewat Google atau diketik bebas.
+const CITIES = {
+  VN: 'Hanoi|Ho Chi Minh|Da Nang|Hoi An|Hue|Nha Trang|Da Lat|Phu Quoc|Ha Long|Sapa|Ninh Binh|Can Tho|Mui Ne|Phan Thiet|Quy Nhon|Vung Tau|Ha Giang|Hai Phong|Cat Ba|Con Dao|Phong Nha|Mai Chau|Buon Ma Thuot|My Tho|Chau Doc|Cao Bang|Tuy Hoa',
+  TH: 'Bangkok|Chiang Mai|Chiang Rai|Phuket|Krabi|Pattaya|Hua Hin|Ayutthaya|Koh Samui|Koh Phangan|Koh Tao|Koh Lanta|Koh Phi Phi|Pai|Sukhothai|Kanchanaburi|Khao Lak|Hat Yai|Udon Thani',
+  SG: 'Singapura',
+  MY: 'Kuala Lumpur|Penang|Langkawi|Malaka|Kota Kinabalu|Kuching|Ipoh|Cameron Highlands|Johor Bahru|Genting Highlands|Putrajaya|Kuantan|Semporna',
+  BN: 'Bandar Seri Begawan',
+  ID: 'Bali|Yogyakarta|Bandung|Jakarta|Surabaya|Malang|Labuan Bajo|Lombok|Medan|Makassar|Semarang|Solo|Bogor|Belitung|Danau Toba|Raja Ampat',
+  PH: 'Manila|Cebu|Boracay|El Nido|Coron|Puerto Princesa|Bohol|Siargao|Davao|Baguio',
+  KH: 'Phnom Penh|Siem Reap|Sihanoukville|Kampot|Kep|Battambang|Koh Rong',
+  LA: 'Vientiane|Luang Prabang|Vang Vieng|Pakse',
+  MM: 'Yangon|Mandalay|Bagan|Inle Lake|Naypyidaw',
+  TL: 'Dili',
+  JP: 'Tokyo|Osaka|Kyoto|Nara|Hiroshima|Sapporo|Fukuoka|Nagoya|Yokohama|Kobe|Hakone|Nikko|Kanazawa|Takayama|Naha (Okinawa)|Kamakura|Kawaguchiko (Fuji)|Sendai|Nagasaki|Otaru|Hakodate|Beppu',
+  KR: 'Seoul|Busan|Jeju|Incheon|Gyeongju|Daegu|Gangneung|Sokcho|Jeonju|Suwon|Yeosu|Daejeon',
+  CN: 'Beijing|Shanghai|Guangzhou|Shenzhen|Chengdu|Xi\'an|Hangzhou|Guilin|Yangshuo|Zhangjiajie|Chongqing|Suzhou|Kunming|Lijiang|Harbin|Xiamen|Nanjing|Qingdao|Sanya',
+  TW: 'Taipei|Taichung|Kaohsiung|Tainan|Hualien|Jiufen|Taitung|Kenting|Taoyuan|Yilan',
+  HK: 'Hong Kong', MO: 'Makau',
+  IN: 'New Delhi|Mumbai|Jaipur|Agra|Goa|Varanasi|Udaipur|Kolkata|Bengaluru|Chennai|Kochi|Rishikesh|Jodhpur|Amritsar|Hyderabad|Leh',
+  LK: 'Colombo|Kandy|Galle|Ella|Sigiriya|Nuwara Eliya|Negombo|Mirissa|Trincomalee',
+  MV: 'Malé', NP: 'Kathmandu|Pokhara|Chitwan|Lumbini|Nagarkot',
+  UZ: 'Tashkent|Samarkand|Bukhara|Khiva',
+  TR: 'Istanbul|Cappadocia|Antalya|Izmir|Ankara|Bodrum|Pamukkale|Fethiye|Trabzon|Bursa|Kusadasi|Selcuk',
+  SA: 'Makkah|Madinah|Jeddah|Riyadh|Taif|AlUla|Dammam|Abha',
+  AE: 'Dubai|Abu Dhabi|Sharjah|Ras Al Khaimah|Al Ain|Fujairah',
+  QA: 'Doha', JO: 'Amman|Petra|Aqaba|Wadi Rum', EG: 'Kairo|Giza|Luxor|Aswan|Alexandria|Hurghada|Sharm El Sheikh',
+  MA: 'Marrakesh|Casablanca|Fes|Chefchaouen|Rabat|Tangier',
+  AU: 'Sydney|Melbourne|Brisbane|Perth|Gold Coast|Cairns|Adelaide|Hobart|Darwin|Canberra|Byron Bay',
+  NZ: 'Auckland|Queenstown|Wellington|Christchurch|Rotorua|Wanaka|Dunedin|Taupo',
+  US: 'New York|Los Angeles|San Francisco|Las Vegas|Chicago|Washington DC|Miami|Orlando|Seattle|Boston|Honolulu|San Diego',
+  CA: 'Toronto|Vancouver|Montreal|Banff|Quebec City|Niagara Falls|Calgary|Ottawa',
+  GB: 'London|Edinburgh|Manchester|Liverpool|Oxford|Cambridge|Bath|York|Birmingham|Glasgow',
+  FR: 'Paris|Nice|Lyon|Marseille|Bordeaux|Strasbourg|Cannes|Annecy|Colmar',
+  IT: 'Roma|Milan|Venesia|Florence|Napoli|Pisa|Verona|Como|Amalfi|Bologna|Turin|Sorrento',
+  ES: 'Barcelona|Madrid|Sevilla|Granada|Valencia|Malaga|Ibiza|Palma de Mallorca|Bilbao|Toledo|Cordoba',
+  DE: 'Berlin|Munich|Frankfurt|Hamburg|Cologne|Heidelberg|Dresden|Nuremberg|Stuttgart|Füssen',
+  NL: 'Amsterdam|Rotterdam|Den Haag|Utrecht|Giethoorn|Leiden|Delft',
+  CH: 'Zurich|Jenewa|Lucerne|Interlaken|Zermatt|Bern|Lausanne|Grindelwald|Lugano|Basel',
+  AT: 'Wina|Salzburg|Innsbruck|Hallstatt|Graz', CZ: 'Praha|Cesky Krumlov|Brno|Karlovy Vary',
+  GR: 'Athena|Santorini|Mykonos|Heraklion (Kreta)|Rhodes|Thessaloniki|Corfu', PT: 'Lisbon|Porto|Sintra|Faro|Funchal (Madeira)',
+};
+const citiesOf = (country) => { const c = findCountry(country); return c && CITIES[c.code] ? CITIES[c.code].split('|') : []; };
+// Mata uang: semua yang dipakai negara di atas + IDR, dengan nama Indonesia.
+const CURRENCIES = [...new Set(Object.values(COUNTRY_CUR).concat('IDR'))]
+  .map((c) => [c, `${dnCurId.of(c) || c} (${c})`])
+  .sort((a, b) => a[1].localeCompare(b[1], 'id'));
+const symbolCache = {};
+function symbolOf(cur) {
+  if (!symbolCache[cur]) {
+    try { symbolCache[cur] = new Intl.NumberFormat('id-ID', { style: 'currency', currency: cur, currencyDisplay: 'narrowSymbol' }).formatToParts(0).find((p) => p.type === 'currency').value; }
+    catch (e) { symbolCache[cur] = cur; }
+    if (/^[A-Z]{3}$/.test(symbolCache[cur]) || symbolCache[cur] === '$') symbolCache[cur] = cur === 'USD' ? 'US$' : symbolCache[cur] === '$' ? cur : symbolCache[cur];
+  }
+  return symbolCache[cur];
+}
+const curDigits = (cur) => { try { return new Intl.NumberFormat('en', { style: 'currency', currency: cur }).resolvedOptions().maximumFractionDigits; } catch (e) { return 2; } };
 const COLORS = ['#0F6E56', '#185FA5', '#A65A0B', '#A3245A', '#534AB7', '#2F7D8C'];
 const label = (list, v) => (list.find((x) => x[0] === v) || [v, v])[1];
 const PLATFORMS = [['google', 'Google Maps'], ['klook', 'Klook'], ['tripadvisor', 'Tripadvisor'], ['kkday', 'KKday'], ['traveloka', 'Traveloka']];
@@ -542,7 +640,7 @@ function rateInfo(cur) {
 }
 const rateOf = (cur) => rateInfo(cur).value;
 const idr = (amount, cur) => (cur === 'IDR' ? amount : amount * rateOf(cur));
-const money = (amount, cur) => (cur === 'IDR' ? `Rp${fmtN(amount)}` : `${fmtN(amount)} ${SYMBOL[cur] || cur}`);
+const money = (amount, cur) => (cur === 'IDR' ? `Rp${fmtN(amount)}` : `${amount % 1 ? fmtInput(amount, 2) : fmtN(amount)} ${symbolOf(cur)}`);
 function moneyBoth(amount, cur) {
   if (!amount) return '';
   if (cur === 'IDR') return money(amount, 'IDR');
@@ -1010,7 +1108,9 @@ function renderBudget(t) {
 
 function renderRateCard(t, withCalc) {
   const r = rateOf(t.cur);
-  const quick = [10000, 50000, 100000, 500000, 1000000].map((n) => n * (t.cur === 'VND' || t.cur === 'KRW' ? 1 : t.cur === 'JPY' ? 0.01 : 0.0001));
+  // Nominal contoh disesuaikan nilai mata uangnya: mulai dari yang setara ±Rp10.000
+  const unit = r ? Math.pow(10, Math.max(0, Math.round(Math.log10(10000 / r)))) : 1;
+  const quick = [1, 5, 10, 50, 100].map((n) => n * unit);
   return `<div class="card" style="padding:14px;margin-top:10px">
     <div class="row" style="justify-content:space-between">
       <div><div class="big" style="font-size:22px">1 ${esc(t.cur)} = ${r ? 'Rp' + fmtRate(r) : '—'}</div>
@@ -1080,6 +1180,23 @@ function field(f) {
       <button type="button" class="btn ghost small" data-a="placeSearch">Cari</button></div>
       <input type="hidden" name="gplace" id="f-gplace" value="${esc(g ? JSON.stringify(g) : '')}">
       <div id="placeResults" class="presults">${g ? placeChosen(g) : ''}</div>`;
+  }
+  else if (f.type === 'country') {
+    const c = findCountry(v);
+    input = `<input type="hidden" name="${f.name}" id="${id}" value="${esc(c ? c.name : v)}">
+      <button type="button" class="picker" id="${id}-btn" data-a="pickCountry" aria-haspopup="dialog">
+        <span class="${v ? '' : 'muted'}">${esc(c ? c.name : v || 'Pilih negara')}</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>`;
+    return `<div class="f"><label for="${id}-btn">${esc(f.label)}</label>${input}</div>`;
+  }
+  else if (f.type === 'citypick') {
+    input = `<input type="hidden" name="${f.name}" id="${id}" value="${esc(v)}">
+      <button type="button" class="picker" id="${id}-btn" data-a="pickCity" aria-haspopup="dialog">
+        <span class="${v ? '' : 'muted'}">${esc(v || 'Pilih kota')}</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>`;
+    return `<div class="f"><label for="${id}-btn">${esc(f.label)}</label>${input}</div>`;
   }
   else if (f.type === 'ratings') input = `<div class="rgrid">${PLATFORMS.map(([k, l]) => `<label class="rcell"><span>${l}</span><input name="r_${k}" type="number" inputmode="decimal" min="0" max="5" step="0.1" placeholder="4.5" value="${esc((v && v[k]) || '')}"></label>`).join('')}</div>`;
   else if (f.type === 'number') input = `<input id="${id}" name="${f.name}" type="text" inputmode="decimal" autocomplete="off" data-num="${f.dec ?? 2}" value="${esc(v ? fmtInput(+v, f.dec ?? 2) : '')}" placeholder="${esc(f.placeholder || '')}" ${req}>`;
@@ -1273,7 +1390,7 @@ function tripForm(t) {
     submit: isNew ? 'Buat trip' : 'Simpan',
     fields: [
       { name: 'name', label: 'Nama trip', value: t?.name, placeholder: 'Liburan Vietnam', required: true },
-      { name: 'country', label: 'Negara tujuan', value: t?.country || t?.place, placeholder: 'Vietnam', datalist: COUNTRIES.map((c) => c[0]) },
+      { name: 'country', label: 'Negara tujuan', type: 'country', value: t?.country || t?.place || '' },
       { name: 'start', label: 'Mulai', type: 'date', value: t?.start || todayStr(), half: true },
       { name: 'end', label: 'Selesai', type: 'date', value: t?.end || addDays(todayStr(), 3), half: true },
       { name: 'cur', label: 'Mata uang (otomatis dari negara)', type: 'select', options: CURRENCIES.map((c) => [c[0], c[1]]), value: t?.cur || 'VND' },
@@ -1282,16 +1399,144 @@ function tripForm(t) {
       if (!v.start) { toast('Isi tanggal mulai'); return false; }
       const end = v.end && v.end >= v.start ? v.end : v.start;
       if (diffDays(v.start, end) > 59) { toast('Maksimal 60 hari per trip'); return false; }
-      const country = (COUNTRIES.find((c) => fold(c[0]) === fold(v.country)) || [v.country])[0];
-      const data = { name: v.name, country, place: country, start: v.start, end, cur: v.cur || 'VND' };
+      const found = findCountry(v.country);
+      if (!found && !v.country) { toast('Pilih negara tujuan'); $('#f-country-btn').click(); return false; }
+      const country = found ? found.name : v.country;
+      const data = { name: v.name, country, countryCode: found ? found.code : '', place: country, start: v.start, end, cur: v.cur || 'VND' };
       if (isNew) {
         const nt = newTrip(data); state.trips.push(nt); state.activeTripId = nt.id; state.tab = 'plan';
         setTimeout(() => cityForm(nt, nt.start), 50); // langsung atur kota hari pertama
-      } else Object.assign(t, data);
+      } else {
+        const countryChanged = fold(t.country) !== fold(country) && tripCities(t).length;
+        Object.assign(t, data);
+        if (countryChanged) setTimeout(() => toast(`Negara diganti ke ${country}. Kota lama masih tercatat, ganti lewat tombol kota di tiap hari.`, null, null, 5000), 50);
+      }
       setTimeout(() => refreshRates(false), 0);
     },
     onDelete: isNew ? null : () => { removeTrip(t.id); return 'silent'; },
   });
+}
+
+/* ---------- pemilih negara: daftar lengkap A–Z di atas form ---------- */
+const pickerRoot = document.createElement('div'); document.body.appendChild(pickerRoot);
+function countryRows(query) {
+  const f = fold(query.trim());
+  const list = f ? COUNTRIES.filter((c) => fold(c.name).includes(f) || fold(c.en).includes(f) || c.code.toLowerCase() === f) : COUNTRIES;
+  if (!list.length) return '<div class="pempty">Negara tidak ditemukan.</div>';
+  const cur = fold($('#f-country') ? $('#f-country').value : '');
+  let html = '', letter = '';
+  list.forEach((c) => {
+    const L = fold(c.name)[0].toUpperCase();
+    if (!f && L !== letter) { letter = L; html += `<div class="pletter" id="pl-${L}">${L}</div>`; }
+    html += `<button type="button" class="prow ${fold(c.name) === cur ? 'on' : ''}" data-a="countryChosen" data-code="${c.code}">
+      <span>${esc(c.name)}${c.en !== c.name ? `<small>${esc(c.en)}</small>` : ''}</span><b>${c.cur}</b></button>`;
+  });
+  return html;
+}
+function openCountryPicker() {
+  const letters = [...new Set(COUNTRIES.map((c) => fold(c.name)[0].toUpperCase()))];
+  pickerRoot.innerHTML = `<div class="scrim pscrim" data-a="pickerScrim"><div class="sheet psheet" role="dialog" aria-modal="true" aria-label="Pilih negara">
+    <div class="grab"></div>
+    <div class="row" style="justify-content:space-between;margin-bottom:10px"><h2 style="margin:0">Pilih negara</h2><button type="button" class="btn ghost small" data-a="pickerClose">Tutup</button></div>
+    <div class="f" style="margin-bottom:8px"><label for="countrySearch" class="sr-only">Cari negara</label>
+      <input id="countrySearch" type="search" autocomplete="off" placeholder="Cari negara, misal: jepang, korea, turki…"></div>
+    <div class="pchips">${POPULAR.map((code) => { const c = COUNTRIES.find((x) => x.code === code); return c ? `<button type="button" class="chip" data-a="countryChosen" data-code="${code}">${esc(c.name)}</button>` : ''; }).join('')}</div>
+    <div class="palpha" aria-label="Lompat ke huruf">${letters.map((L) => `<button type="button" data-a="pickerJump" data-k="${L}">${L}</button>`).join('')}</div>
+    <div class="plist" id="countryList">${countryRows('')}</div>
+  </div></div>`;
+  const s = $('#countrySearch');
+  s.addEventListener('input', () => { $('#countryList').innerHTML = countryRows(s.value); $('.palpha').hidden = !!s.value.trim(); });
+  const on = $('.prow.on'); if (on) on.scrollIntoView({ block: 'center' });
+  if (!('ontouchstart' in window)) s.focus();
+}
+function closeCountryPicker() { pickerRoot.innerHTML = ''; }
+function chooseCountry(code) {
+  const c = COUNTRIES.find((x) => x.code === code); if (!c) return;
+  const inp = $('#f-country'), btn = $('#f-country-btn'), cur = $('#f-cur');
+  if (inp) inp.value = c.name;
+  if (btn) { const span = btn.querySelector('span'); span.textContent = c.name; span.className = ''; }
+  if (cur) cur.value = c.cur;
+  closeCountryPicker();
+  if (btn) btn.focus();
+}
+
+/* ---------- pemilih kota: daftar bawaan per negara + pencarian Google + ketik bebas ---------- */
+let cityPickerTrip = null, citySearchTimer = null, citySeq = 0;
+const cityCache = new Map();
+async function searchCities(query, country) {
+  const c = findCountry(country);
+  const key = fold(query + '|' + country);
+  if (cityCache.has(key)) return cityCache.get(key);
+  const maps = await loadMaps(); if (!maps) return [];
+  const { Place } = await maps.importLibrary('places');
+  const req = { textQuery: `${query}, ${c ? c.en : country}`, maxResultCount: 8, language: 'id', fields: ['id', 'displayName', 'formattedAddress'] };
+  let places;
+  try { ({ places } = await Place.searchByText(Object.assign({ includedType: 'locality' }, req))); }
+  catch (e) { ({ places } = await Place.searchByText(req)); }
+  const inCountry = (p) => !c || [c.name, c.en].some((n) => fold(p.formattedAddress || '').includes(fold(n)));
+  const out = [...new Map(places.filter(inCountry).map((p) => [fold(p.displayName), { name: p.displayName, sub: p.formattedAddress }])).values()];
+  cityCache.set(key, out);
+  return out;
+}
+function cityRowsHtml(t, query) {
+  const f = fold(query.trim());
+  const base = citiesOf(t.country);
+  const used = tripCities(t);
+  const pool = [...new Set(used.concat(catalogCitiesFor(t.country), base))];
+  const cur = fold($('#f-city') ? $('#f-city').value : '');
+  const row = (name, sub) => `<button type="button" class="prow ${fold(name) === cur ? 'on' : ''}" data-a="cityChosen" data-v="${esc(name)}"><span>${esc(name)}${sub ? `<small>${esc(sub)}</small>` : ''}</span>${used.some((u) => fold(u) === fold(name)) ? '<b>di rute</b>' : ''}</button>`;
+  let html = '';
+  if (cur && !f) html += `<button type="button" class="prow" data-a="cityChosen" data-v=""><span>Kosongkan kota<small>Hari ini belum ditentukan</small></span></button>`;
+  if (f) {
+    const hits = pool.filter((n) => fold(n).includes(f));
+    html += hits.map((n) => row(n)).join('');
+    if (!pool.some((n) => fold(n) === f)) html += `<button type="button" class="prow" data-a="cityChosen" data-v="${esc(query.trim())}"><span>Pakai “${esc(query.trim())}”<small>Ketik bebas, tidak dari daftar</small></span></button>`;
+    html += placesEnabled() ? '<div class="pletter">Dari Google</div><div id="cityGoogle"><div class="pempty">Mencari…</div></div>' : '';
+    return html;
+  }
+  if (used.length) html += '<div class="pletter">Sudah di rute</div>' + used.map((n) => row(n)).join('');
+  const rest = pool.filter((n) => !used.some((u) => fold(u) === fold(n))).sort((a, b) => a.localeCompare(b, 'id'));
+  let letter = '';
+  rest.forEach((n) => { const L = fold(n)[0].toUpperCase(); if (L !== letter) { letter = L; html += `<div class="pletter">${L}</div>`; } html += row(n); });
+  if (!pool.length) html += `<div class="pempty">Belum ada daftar kota bawaan untuk ${esc(t.country || 'negara ini')}.<br>Ketik nama kota di kotak pencarian${placesEnabled() ? ', hasilnya dicari lewat Google' : ''}.</div>`;
+  return html;
+}
+function openCityPicker() {
+  const t = cityPickerTrip || trip(); if (!t) return;
+  pickerRoot.innerHTML = `<div class="scrim pscrim" data-a="pickerScrim"><div class="sheet psheet" role="dialog" aria-modal="true" aria-label="Pilih kota">
+    <div class="grab"></div>
+    <div class="row" style="justify-content:space-between;margin-bottom:10px"><h2 style="margin:0">Kota di ${esc(t.country || 'negara tujuan')}</h2><button type="button" class="btn ghost small" data-a="pickerClose">Tutup</button></div>
+    <div class="f" style="margin-bottom:8px"><label for="citySearch" class="sr-only">Cari kota</label>
+      <input id="citySearch" type="search" autocomplete="off" placeholder="Cari atau ketik nama kota…"></div>
+    <div class="plist" id="cityList">${cityRowsHtml(t, '')}</div>
+  </div></div>`;
+  const s = $('#citySearch');
+  s.addEventListener('input', () => {
+    $('#cityList').innerHTML = cityRowsHtml(t, s.value);
+    clearTimeout(citySearchTimer);
+    const q = s.value.trim();
+    if (q.length < 2 || !placesEnabled()) return;
+    const seq = ++citySeq;
+    citySearchTimer = setTimeout(async () => {
+      let html;
+      try {
+        const res = await searchCities(q, t.country);
+        const known = new Set([...$('#cityList').querySelectorAll('.prow[data-v]')].map((b) => fold(b.dataset.v)));
+        const fresh = res.filter((r) => !known.has(fold(r.name)));
+        html = fresh.length ? fresh.map((r) => `<button type="button" class="prow" data-a="cityChosen" data-v="${esc(r.name)}"><span>${esc(r.name)}<small>${esc(r.sub)}</small></span></button>`).join('') : '<div class="pempty">Tidak ada kota lain yang cocok.</div>';
+      } catch (e) { html = '<div class="pempty">Pencarian Google gagal. Pakai nama yang diketik.</div>'; }
+      const box = $('#cityGoogle'); if (box && seq === citySeq) box.innerHTML = html;
+    }, 600);
+  });
+  const on = $('#cityList .prow.on'); if (on) on.scrollIntoView({ block: 'center' });
+  if (!('ontouchstart' in window)) s.focus();
+}
+function chooseCity(name) {
+  const inp = $('#f-city'), btn = $('#f-city-btn');
+  if (inp) inp.value = name;
+  if (btn) { const span = btn.querySelector('span'); span.textContent = name || 'Pilih kota'; span.className = name ? '' : 'muted'; }
+  closeCountryPicker();
+  if (btn) btn.focus();
 }
 
 // Atur kota untuk satu tanggal, sekaligus bisa diterapkan ke tanggal-tanggal berikutnya.
@@ -1304,11 +1549,12 @@ function cityForm(t, day) {
   const cur = cityOf(t, day);
   let to = from;
   while (to + 1 < days.length && cityOf(t, days[to + 1]) === cur) to++;
-  const suggestions = [...new Set(tripCities(t).concat(catalogCitiesFor(t.country)))];
+  const suggestions = [...new Set(tripCities(t).concat(catalogCitiesFor(t.country), citiesOf(t.country)))];
+  cityPickerTrip = t;
   openForm({
     title: `Kota untuk ${dayLabel(day)}`, submit: 'Simpan kota',
     fields: [
-      { name: 'city', label: `Kota di ${t.country || 'negara tujuan'}`, value: cur, placeholder: suggestions[0] || 'Nama kota', datalist: suggestions },
+      { name: 'city', label: `Kota di ${t.country || 'negara tujuan'}`, type: 'citypick', value: cur },
       { name: 'until', label: 'Berlaku sampai', type: 'select', value: days[to],
         options: days.slice(from).map((d, i) => [d, `${i === 0 ? 'Hari ini saja' : 'Sampai'} · Hari ${from + i + 1}, ${dayLabel(d)}`]) },
     ],
@@ -1625,6 +1871,12 @@ const actions = {
     save(); render(); toast('Tersimpan di Tempat simpanan');
   },
   setCity(d) { const t = trip(); cityForm(t, d.d || t.start); },
+  pickCountry() { openCountryPicker(); },
+  pickCity() { openCityPicker(); },
+  cityChosen(d) { chooseCity(d.v || ''); },
+  countryChosen(d) { chooseCountry(d.code); },
+  pickerClose() { closeCountryPicker(); },
+  pickerJump(d) { const el = document.getElementById('pl-' + d.k); if (el) el.scrollIntoView({ block: 'start' }); },
   saveCatalog(d) {
     const c = CATALOG[d.city] && CATALOG[d.city].items[+d.i]; if (!c) return;
     const g = catG(c);
@@ -1696,6 +1948,7 @@ document.addEventListener('click', (e) => {
   if (!el) return;
   const a = el.dataset.a;
   if (a === 'scrim') { if (e.target === el) closeSheet(); return; }
+  if (a === 'pickerScrim') { if (e.target === el) closeCountryPicker(); return; }
   const link = e.target.closest('a');
   if (link && el.contains(link)) return; // tautan (Maps, situs) di dalam kartu tetap terbuka
   if (el.type === 'checkbox') { actions[a] && actions[a](el.dataset, el, e); return; }
@@ -1708,7 +1961,7 @@ document.addEventListener('click', (e) => {
   if (actions[a]) { e.preventDefault(); actions[a](el.dataset, el, e); }
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && sheetRoot.firstChild) closeSheet();
+  if (e.key === 'Escape') { if (pickerRoot.firstChild) closeCountryPicker(); else if (sheetRoot.firstChild) closeSheet(); }
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role="button"][data-a]')) { e.preventDefault(); e.target.click(); }
 });
 let notesTimer;
@@ -1721,7 +1974,7 @@ document.addEventListener('input', (e) => {
   if (e.target.matches('[data-conv]') && t) {
     const v = num(e.target.value), r = rateOf(t.cur);
     if (!r) return;
-    const noCents = t.cur === 'VND' || t.cur === 'KRW' || t.cur === 'JPY';
+    const noCents = curDigits(t.cur) === 0;
     if (e.target.dataset.conv === 'local') $('#cvIdr').value = fmtInput(Math.round(v * r), 0);
     else $('#cvLocal').value = fmtInput(v / r, noCents ? 0 : 2);
   }

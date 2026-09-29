@@ -898,18 +898,51 @@ function loadMaps() {
   return mapsP;
 }
 const placeCache = new Map();
+let placePriceFields = true;
+/* Harga: x.cost (isi manual, mis. dari Klook) diutamakan; jika kosong, kisaran dari Google (kuliner) atau tingkat harga $–$$$$. */
+const PRICE_LEVELS = ['Gratis', '$', '$$', '$$$', '$$$$'];
+const PRICE_LEVEL_KEY = { FREE: 0, INEXPENSIVE: 1, MODERATE: 2, EXPENSIVE: 3, VERY_EXPENSIVE: 4, PRICE_LEVEL_FREE: 0, PRICE_LEVEL_INEXPENSIVE: 1, PRICE_LEVEL_MODERATE: 2, PRICE_LEVEL_EXPENSIVE: 3, PRICE_LEVEL_VERY_EXPENSIVE: 4 };
+function gPriceMid(g) { const p = g && g.price; return p ? ((p.min || p.max) + (p.max || p.min)) / 2 : 0; }
+function gPriceText(g) {
+  if (!g) return '';
+  const p = g.price;
+  if (p && (p.min || p.max)) {
+    const cur = p.cur || 'IDR';
+    const txt = p.min && p.max && p.max !== p.min ? `${fmtN(p.min)}–${money(p.max, cur)}` : money(p.min || p.max, cur);
+    const mid = gPriceMid(g);
+    const rate = cur === 'IDR' ? 1 : rateOf(cur);
+    return `${txt}${cur !== 'IDR' && rate ? ` · ±Rp${fmtN(Math.round(mid * rate / 1000) * 1000)}` : ''}`;
+  }
+  const lv = typeof g.level === 'number' ? g.level : PRICE_LEVEL_KEY[g.level];
+  return lv != null ? `${PRICE_LEVELS[lv]}${lv ? ' (tingkat harga)' : ''}` : '';
+}
+function priceLine(x, g) {
+  if (x && x.cost) return `<div class="sub num price">Harga: ${esc(moneyBoth(x.cost, x.cur || 'VND'))}</div>`;
+  const t = gPriceText(g || (x && x.g));
+  return t ? `<div class="sub num price">Kisaran harga: ${esc(t)} <span class="muted">· Google</span></div>` : '';
+}
 async function searchPlaces(query, n = 5) {
   const key = n + '|' + fold(query);
   if (placeCache.has(key)) return placeCache.get(key);
   const maps = await loadMaps();
   if (!maps) return [];
   const { Place } = await maps.importLibrary('places');
-  const { places } = await Place.searchByText({
-    textQuery: query, maxResultCount: n, language: 'id',
-    fields: ['id', 'displayName', 'formattedAddress', 'rating', 'userRatingCount', 'googleMapsURI', 'location'],
+  const base = ['id', 'displayName', 'formattedAddress', 'rating', 'userRatingCount', 'googleMapsURI', 'location'];
+  const run = (fields) => Place.searchByText({ textQuery: query, maxResultCount: n, language: 'id', fields });
+  let places;
+  // Kisaran harga (priceRange) dan tingkat harga (priceLevel) ikut diminta; jika Google menolak nama field-nya, ulangi tanpa itu.
+  try { ({ places } = await run(placePriceFields ? base.concat(['priceLevel', 'priceRange']) : base)); }
+  catch (e) {
+    if (!placePriceFields || !/field|price|invalid|unsupported/i.test(String((e && e.message) || e))) throw e;
+    placePriceFields = false; ({ places } = await run(base));
+  }
+  const mv = (m) => (m ? Number(m.units || 0) + Number(m.nanos || 0) / 1e9 : 0);
+  const out = places.map((p) => {
+    const pr = p.priceRange ? { min: mv(p.priceRange.startPrice), max: mv(p.priceRange.endPrice), cur: ((p.priceRange.startPrice || p.priceRange.endPrice || {}).currencyCode) || '' } : null;
+    return { pid: p.id, name: p.displayName || '', address: p.formattedAddress || '', rating: p.rating ?? null, count: p.userRatingCount ?? 0, uri: p.googleMapsURI || '', at: Date.now(),
+      lat: p.location ? p.location.lat() : null, lng: p.location ? p.location.lng() : null,
+      price: pr && (pr.min || pr.max) ? pr : null, level: p.priceLevel ?? null, pv: 1 };
   });
-  const out = places.map((p) => ({ pid: p.id, name: p.displayName || '', address: p.formattedAddress || '', rating: p.rating ?? null, count: p.userRatingCount ?? 0, uri: p.googleMapsURI || '', at: Date.now(),
-    lat: p.location ? p.location.lat() : null, lng: p.location ? p.location.lng() : null }));
   placeCache.set(key, out);
   return out;
 }
@@ -1453,6 +1486,7 @@ function renderItem(t, it, orphan) {
         ${it.location ? `<div class="loc">${isUrl(it.location) ? 'Link Google Maps tersimpan' : esc(it.location)}</div>` : ''}
         ${stars(it)}
         ${recBadges(it, 2)}
+        ${!it.cost && it.type !== 'stay' ? priceLine(it) : ''}
         ${it.note ? `<div class="note">${esc(it.note)}</div>` : ''}
         ${it.cost ? `<div class="cost num">${esc(moneyBoth(it.cost, it.cur))}${isStayItem(it) && it.perNight ? ` · ${esc(money(it.perNight, it.cur))}/malam` : ''}</div>` : ''}
       </div>
@@ -1485,8 +1519,10 @@ function renderPlaces(t) {
         <div class="title" data-a="editPlace" data-id="${p.id}" role="button" tabindex="0" style="cursor:pointer;margin-top:4px">${esc(p.title)}</div>
         ${p.location ? `<div class="sub">${isUrl(p.location) ? 'Link Google Maps tersimpan' : esc(p.location)}</div>` : ''}
         ${recBadges(p)}
+        ${priceLine(p) || `<button type="button" class="linkbtn" data-a="editPlace" data-id="${p.id}">+ Isi harga</button>`}
         ${p.note ? `<div class="sub">${esc(p.note)}</div>` : ''}
         <div class="acts"><button data-a="schedulePlace" data-id="${p.id}">Jadwalkan</button>
+          <a href="${esc(reviewLinks(t, p).klook)}" target="_blank" rel="noopener">Harga Klook</a>
           <a class="go" href="${esc(mapsNav(t, p))}" target="_blank" rel="noopener">Navigasi</a>
           <a href="${esc(mapsOpen(t, p))}" target="_blank" rel="noopener">Maps</a>
           <button data-a="reviews" data-kind="places" data-id="${p.id}">Review</button>
@@ -1561,10 +1597,11 @@ function exploreRow({ title, type, note, g, maps, rl, save }) {
     <div class="row" style="gap:6px"><span class="pill t-${type}">${esc(label(ITEM_TYPES, type))}</span>${g && g.rating ? `<span class="star num">${gRating(g)}</span>` : ''}</div>
     <div class="title" style="margin-top:4px">${esc(title)}</div>
     ${note ? `<div class="sub">${esc(note)}</div>` : ''}
+    ${priceLine(null, g) || `<div class="sub muted" style="font-size:12px">${type === 'food' ? 'Kisaran harga belum ada di Google' : 'Harga tiket: cek Klook'}</div>`}
     <div class="acts">
       ${save ? `<button ${save}>+ Simpan</button>` : '<button disabled>Tersimpan</button>'}
       <a class="go" href="${esc(maps)}" target="_blank" rel="noopener">Maps</a>
-      <a href="${esc(rl.klook)}" target="_blank" rel="noopener">Klook</a>
+      <a href="${esc(rl.klook)}" target="_blank" rel="noopener">Klook (harga)</a>
       <a href="${esc(rl.tripadvisor)}" target="_blank" rel="noopener">Tripadvisor</a>
     </div></div></div>`;
 }
@@ -1574,13 +1611,13 @@ async function fetchExplore(t) {
   if (!city) return;
   if (mode === 'pilihan') { fetchCatalogRatings(cat[1]); return; }
   const cache = (state.gexplore || {})[key];
-  if ((cache && Date.now() - cache.at < 30 * 86400000) || exploreLoading[key] === true) return;
+  if ((cache && cache.v === 2 && Date.now() - cache.at < 30 * 86400000) || exploreLoading[key] === true) return;
   exploreLoading[key] = true;
   try {
     const q = `${mode === 'kuliner' ? 'restoran dan kuliner populer' : 'tempat wisata populer'} di ${city}, ${country}`;
     const items = await searchPlaces(q, 15);
     state.gexplore = state.gexplore || {};
-    state.gexplore[key] = { at: Date.now(), items: items.sort((a, b) => (b.rating || 0) * Math.log10(10 + b.count) - (a.rating || 0) * Math.log10(10 + a.count)) };
+    state.gexplore[key] = { at: Date.now(), v: 2, items: items.sort((a, b) => (b.rating || 0) * Math.log10(10 + b.count) - (a.rating || 0) * Math.log10(10 + a.count)) };
     exploreLoading[key] = false;
     save(true);
   } catch (e) { exploreLoading[key] = 'fail'; console.warn(e); }
@@ -1592,14 +1629,14 @@ const catG = (c) => (state.gcat || {})[fold(c.location)] || null;
 let catQueue = false;
 async function fetchCatalogRatings(cat) {
   if (catQueue || !cat || !placesEnabled() || !navigator.onLine) return;
-  const todo = cat.items.filter((c) => { const g = catG(c); return !g || Date.now() - g.at > 30 * 86400000; });
+  const todo = cat.items.filter((c) => { const g = catG(c); return !g || !g.pv || Date.now() - g.at > 30 * 86400000; });
   if (!todo.length) return;
   catQueue = true;
   state.gcat = state.gcat || {};
   try {
     for (const c of todo) {
       const res = await searchPlaces(withPlace(c.location, cat.place));
-      state.gcat[fold(c.location)] = res[0] || { rating: null, count: 0, uri: '', at: Date.now() };
+      state.gcat[fold(c.location)] = res[0] || { rating: null, count: 0, uri: '', at: Date.now(), pv: 1 };
       save(true); if (state.tab === 'places') softRender();
     }
   } catch (e) { console.warn(e); }
@@ -2549,10 +2586,11 @@ function placeForm(t, p) {
       { name: 'title', label: 'Nama tempat', value: p?.title, placeholder: 'Khem Beach', required: true },
       { name: 'type', label: 'Jenis', type: 'select', options: ITEM_TYPES, value: p?.type || 'activity' },
       { name: 'location', label: 'Lokasi', type: 'place', value: p?.location, g: p?.g, placeholder: 'Khem Beach', hint: true },
+      { name: 'cost', label: 'Harga tiket / per orang (isi manual, mis. dari Klook)', type: 'money', value: p?.cost, cur: p?.cur },
       { name: 'note', label: 'Catatan', type: 'textarea', value: p?.note },
     ],
     onSubmit(v) {
-      const data = { title: v.title, type: v.type, location: v.location, note: v.note, g: readG(v) };
+      const data = { title: v.title, type: v.type, location: v.location, note: v.note, g: readG(v), cost: num(v.cost), cur: v.costCur || t.cur };
       if (isNew) t.places.push(Object.assign({ id: uid() }, data)); else Object.assign(p, data);
     },
     onDelete: isNew ? null : () => { t.places = t.places.filter((x) => x.id !== p.id); },
@@ -2565,10 +2603,11 @@ function scheduleForm(t, p) {
     fields: [
       { name: 'day', label: 'Hari', type: 'select', options: days, value: days[0]?.[0], half: true },
       { name: 'time', label: 'Jam', type: 'time', half: true },
+      { name: 'cost', label: 'Perkiraan biaya (dari harga tempat)', type: 'money', value: p.cost || Math.round(gPriceMid(p.g)) || '', cur: p.cost ? p.cur : (p.g && p.g.price && p.g.price.cur) || p.cur },
       { name: 'keep', label: 'Setelah dijadwalkan', type: 'select', options: [['remove', 'Hapus dari daftar tempat'], ['keep', 'Tetap simpan di daftar']], value: 'remove' },
     ],
     onSubmit(v) {
-      t.items.push({ id: uid(), title: p.title, type: p.type, location: p.location, note: p.note, ratings: p.ratings, g: p.g || null, recs: p.recs || [], day: v.day, time: v.time, cost: 0, cur: t.cur, done: false, order: insertOrder(t, v.day, v.time) });
+      t.items.push({ id: uid(), title: p.title, type: p.type, location: p.location, note: p.note, ratings: p.ratings, g: p.g || null, recs: p.recs || [], day: v.day, time: v.time, cost: num(v.cost), cur: v.costCur || t.cur, done: false, order: insertOrder(t, v.day, v.time) });
       if (v.keep === 'remove') t.places = t.places.filter((x) => x.id !== p.id);
       toast('Masuk ke rencana ' + shortDate(v.day));
     },

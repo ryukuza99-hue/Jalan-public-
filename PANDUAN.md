@@ -75,6 +75,11 @@ link Google Maps dan tombol **Navigasi** langsung mengarah ke tempat itu.
 Di tab **Tempat**, daftar **Jelajahi** otomatis menampilkan rating Google, dan tombol
 **Ambil rating Google** melengkapi rating aktivitas yang sudah ada.
 
+**Harga:** untuk tempat makan, aplikasi ikut meminta kisaran harga (`priceRange`) dan tingkat harga ($–$$$$) dari Google.
+Kedua data ini termasuk kategori pencarian yang lebih mahal (Enterprise + Atmosphere), jadi cek batas gratis dan harganya di
+halaman harga Google Maps Platform sebelum memakai key sendiri. Untuk tiket wisata, Google hampir tidak punya datanya:
+isi manual di kolom **Harga tiket / per orang** (tombol **Harga Klook** membuka pencarian di Klook).
+
 Rating Klook, Tripadvisor, KKday, dan Traveloka tidak bisa diambil otomatis karena platform tersebut tidak menyediakan
 data untuk aplikasi umum. Tombol **Review** membuka halaman tempat itu di masing-masing platform.
 

@@ -894,15 +894,68 @@ async function searchPlaces(query, n = 5) {
   const { Place } = await maps.importLibrary('places');
   const { places } = await Place.searchByText({
     textQuery: query, maxResultCount: n, language: 'id',
-    fields: ['id', 'displayName', 'formattedAddress', 'rating', 'userRatingCount', 'googleMapsURI'],
+    fields: ['id', 'displayName', 'formattedAddress', 'rating', 'userRatingCount', 'googleMapsURI', 'location'],
   });
-  const out = places.map((p) => ({ pid: p.id, name: p.displayName || '', address: p.formattedAddress || '', rating: p.rating ?? null, count: p.userRatingCount ?? 0, uri: p.googleMapsURI || '', at: Date.now() }));
+  const out = places.map((p) => ({ pid: p.id, name: p.displayName || '', address: p.formattedAddress || '', rating: p.rating ?? null, count: p.userRatingCount ?? 0, uri: p.googleMapsURI || '', at: Date.now(),
+    lat: p.location ? p.location.lat() : null, lng: p.location ? p.location.lng() : null }));
   placeCache.set(key, out);
   return out;
 }
 /* Cadangan kalau Google gagal/kuota habis: OpenStreetMap (Nominatim), gratis tanpa key, tanpa rating.
    Link Maps tetap ke Google Maps lewat koordinat. Hasilnya ditandai src:'osm' supaya rating Google bisa diambil nanti. */
-const noG = (x) => !x.g || x.g.src === 'osm';
+const noG = (x) => !x.g || x.g.src === 'osm' || x.g.src === 'link';
+/* Link Google Maps yang ditempel user (dipakai saat kuota pencarian Google habis).
+   Nama dan koordinat dibaca dari link; rating menyusul otomatis lewat rateLinked() begitu Google bisa dipakai lagi.
+   Link pendek (maps.app.goo.gl) tidak bisa dibuka dari aplikasi, jadi namanya diambil dari kolom Nama. */
+function parseMapsLink(url) {
+  const out = { name: '', lat: null, lng: null, short: false };
+  let u; try { u = new URL(String(url).trim()); } catch (e) { return out; }
+  out.short = /(^|\.)goo\.gl$|^maps\.app\.goo\.gl$/.test(u.hostname);
+  const dec = (s) => { try { return decodeURIComponent(s.replace(/\+/g, ' ')).trim(); } catch (e) { return s.replace(/\+/g, ' ').trim(); } };
+  const m = u.pathname.match(/\/maps\/place\/([^/@]+)/);
+  if (m) out.name = dec(m[1]);
+  else { const q = u.searchParams.get('q') || u.searchParams.get('query'); if (q && !/^-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$/.test(q.trim())) out.name = dec(q); }
+  const ll = decodeURIComponent(u.href).match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || u.href.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/)
+    || (u.searchParams.get('q') || u.searchParams.get('query') || '').match(/^(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)$/);
+  if (ll) { out.lat = +ll[1]; out.lng = +ll[2]; }
+  return out;
+}
+const kmBetween = (a, b) => { const R = 6371, r = Math.PI / 180, dLa = (b.lat - a.lat) * r, dLo = (b.lng - a.lng) * r;
+  const h = Math.sin(dLa / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
+// Pilih hasil Google yang paling dekat dengan titik di link; tanpa koordinat, hasil pertama.
+function pickNearest(res, ref) {
+  if (!res || !res.length) return null;
+  if (ref && ref.lat != null && ref.lng != null) {
+    const near = res.filter((r) => r.lat != null).map((r) => ({ r, d: kmBetween(ref, r) })).sort((a, b) => a.d - b.d)[0];
+    return near && near.d < 1.5 ? near.r : null;
+  }
+  return res[0];
+}
+let rateJob = false;
+async function rateLinked() {
+  if (rateJob || !placesEnabled() || !navigator.onLine || Date.now() < googleDownUntil) return;
+  rateJob = true; let n = 0, changed = false;
+  try {
+    for (const t of state.trips) {
+      for (const x of t.places.concat(t.items)) {
+        if (n >= 4) break;
+        const linkOnly = !x.g && isUrl(x.location);
+        if (!(linkOnly || (x.g && x.g.src === 'link'))) continue;
+        if (x.g && x.g.tried && Date.now() - x.g.tried < 6 * 3600e3) continue; // sudah dicoba, tidak ketemu: jangan ulang terus
+        const base = x.g ? Object.assign({}, x.g) : { pid: '', name: '', address: '', rating: null, count: 0, uri: x.location.trim(), src: 'link', at: Date.now() };
+        if (linkOnly) { const p = parseMapsLink(x.location); Object.assign(base, { name: p.name, lat: p.lat, lng: p.lng }); }
+        const name = base.name || x.title; if (!name) continue;
+        n++;
+        try {
+          const res = await searchPlaces(withPlace(name, whereOf(t, x)));
+          const best = pickNearest(res, base);
+          x.g = best ? Object.assign({}, best, { uri: best.uri || base.uri }) : Object.assign(base, { tried: Date.now() });
+          changed = true;
+        } catch (e) { googleDownUntil = Date.now() + 30 * 60 * 1000; return; }
+      }
+    }
+  } finally { rateJob = false; if (changed) { save(); if (state.tab === 'places' || state.tab === 'plan') softRender(); } }
+}
 let googleDownUntil = 0;
 async function searchOsm(query, n = 5) {
   const res = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=${n}&accept-language=id&addressdetails=0&q=${encodeURIComponent(query)}`);
@@ -1801,7 +1854,7 @@ document.addEventListener('submit', (e) => {
   for (const [k, val] of fd.entries()) v[k] = typeof val === 'string' ? val.trim() : val;
   const req = e.target.querySelector('[required]');
   if (req && !req.value.trim()) { req.focus(); toast('Isi ' + (req.labels && req.labels[0] ? req.labels[0].textContent : 'kolom wajib')); return; }
-  if (sheetSubmit && sheetSubmit(v) !== false) { closeSheet(); save(); render(); if (trip()) fixExpenseRates(trip()); }
+  if (sheetSubmit && sheetSubmit(v) !== false) { closeSheet(); save(); render(); if (trip()) fixExpenseRates(trip()); setTimeout(rateLinked, 1500); }
 });
 
 let toastTimer;
@@ -1908,37 +1961,62 @@ document.addEventListener('change', (e) => {
 });
 function readG(v) { try { return v.gplace ? JSON.parse(v.gplace) : null; } catch (e) { return null; } }
 function placeChosen(g) {
-  return `<div class="pchosen"><div class="main"><b>${esc(g.name)}</b><div class="sub">${esc(g.address)}</div>
-    ${g.rating ? `<div class="star num">${gRating(g)}</div>` : `<div class="sub">${g.src === 'osm' ? 'Rating belum diambil (Google sedang penuh)' : 'Belum ada rating di Google'}</div>`}</div>
+  const st = g.rating ? `<div class="star num">${gRating(g)}</div>`
+    : g.src === 'link' ? '<div class="sub">Lokasi dari link Google Maps. Rating dan ulasan terisi otomatis begitu pencarian Google tersedia.</div>'
+    : g.src === 'osm' ? '<div class="sub">Rating belum diambil (Google sedang penuh)</div>' : '<div class="sub">Belum ada rating di Google</div>';
+  return `<div class="pchosen"><div class="main"><b>${esc(g.name || 'Lokasi dari link')}</b><div class="sub">${esc(g.address)}</div>${st}</div>
     <button type="button" class="x" data-a="placeClear" aria-label="Lepas pilihan">×</button></div>`;
 }
 let placeTimer = null, placeSeq = 0;
+const withTimeout = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error('waktu habis')), ms))]);
+const placeCtx = (t) => { const dayEl = $('#f-day'); return t ? (dayEl ? ctxOf(t, dayEl.value, $('#f-at') && $('#f-at').value) : (t.country || t.place)) : ''; };
+const googleFullHelp = `<div class="sub" style="padding:8px 2px"><b>Kuota pencarian Google hari ini habis.</b><br>Cara lain: buka Google Maps, cari tempatnya, ketuk <b>Bagikan → Salin link</b>, lalu tempel di kolom Lokasi di atas. Nama dan link ulasan langsung terisi, dan rating menyusul otomatis begitu kuota Google pulih.</div>
+  <button type="button" class="btn ghost small" data-a="osmSearch" style="margin-top:6px">Cari tanpa rating (OpenStreetMap)</button>`;
+function showPlaceResults(box, res, note) {
+  box.innerHTML = (res.length ? res.map((g, i) => `<button type="button" class="presult" data-a="placePick" data-i="${i}">
+      <b>${esc(g.name)}</b><span class="sub">${esc(g.address)}</span>${g.rating ? `<span class="star num">${gRating(g)}</span>` : ''}</button>`).join('')
+    : '<div class="sub" style="padding:8px 2px">Tidak ditemukan. Coba nama lain, atau tempel link dari Google Maps.</div>')
+    + (note ? `<div class="sub" style="padding:6px 2px;font-size:12px">${esc(note)}</div>` : '');
+  box._results = res;
+}
+// Link Google Maps ditempel di kolom Lokasi: nama & titik dibaca dari link, lalu rating dicoba diambil dari Google.
+async function applyPlaceLink() {
+  const inp = $('#f-location'), box = $('#placeResults'), hid = $('#f-gplace'); if (!inp || !box || !hid) return;
+  const url = inp.value.trim(); if (!isUrl(url)) return;
+  const seq = ++placeSeq;
+  const p = parseMapsLink(url);
+  const title = $('#f-title') ? $('#f-title').value.trim() : '';
+  const t = trip();
+  let g = { pid: '', name: p.name, address: '', rating: null, count: 0, uri: url, src: 'link', lat: p.lat, lng: p.lng, at: Date.now() };
+  const name = p.name || title;
+  if (name && placesEnabled() && Date.now() > googleDownUntil) {
+    box.innerHTML = '<div class="sub" style="padding:8px 2px">Membaca link dan mengambil rating…</div>';
+    try {
+      const best = pickNearest(await withTimeout(searchPlaces(withPlace(name, placeCtx(t))), 8000), g);
+      if (best) g = Object.assign({}, best, { uri: best.uri || url });
+    } catch (e) { googleDownUntil = Date.now() + 10 * 60 * 1000; }
+  }
+  if (seq !== placeSeq) return;
+  hid.value = JSON.stringify(g);
+  if (g.name) inp.value = [g.name, g.address].filter(Boolean).join(', ');
+  const tt = $('#f-title'); if (tt && !tt.value.trim() && g.name) tt.value = g.name;
+  box.innerHTML = placeChosen(g) + (p.short && !p.name && !title ? '<div class="sub" style="padding:6px 2px;font-size:12px">Link pendek: isi kolom Nama dengan nama tempatnya, supaya rating bisa dicari otomatis.</div>' : '');
+}
 async function runPlaceSearch(immediate) {
   const inp = $('#f-location'); const box = $('#placeResults');
-  if (!inp || !box || !placesEnabled()) return;
+  if (!inp || !box) return;
+  if (isUrl(inp.value.trim())) { applyPlaceLink(); return; }
+  if (!placesEnabled()) return;
   const q = inp.value.trim() || ($('#f-title') ? $('#f-title').value.trim() : '');
   if (q.length < 3 || isUrl(q)) return;
   const seq = ++placeSeq;
-  box.innerHTML = '<div class="sub" style="padding:8px 2px">Mencari…</div>';
-  const t = trip();
-  const dayEl = $('#f-day'); // form aktivitas: cari di kota hari itu; form tempat: di negara tujuan
-  const full = withPlace(q, t ? (dayEl ? ctxOf(t, dayEl.value, $('#f-at') && $('#f-at').value) : (t.country || t.place)) : '');
-  let res = null, note = '';
-  if (Date.now() > googleDownUntil) {
-    try { res = await Promise.race([searchPlaces(full), new Promise((_, no) => setTimeout(() => no(new Error('waktu habis')), 8000))]); }
-    catch (e) { googleDownUntil = Date.now() + 10 * 60 * 1000; console.warn('Google gagal, pakai cadangan', e); }
-  }
-  if (res && !res.length) { try { const alt = await searchOsm(full); if (alt.length) { res = alt; note = 'Google tidak menemukan; hasil dari OpenStreetMap (tanpa rating).'; } } catch (e) { /* biarkan kosong */ } }
-  if (!res) {
-    try { res = await searchOsm(full); note = 'Pencarian Google sedang penuh; hasil dari OpenStreetMap (tanpa rating). Rating bisa diambil lagi nanti lewat tombol Ambil rating Google.'; }
-    catch (e) { if (seq === placeSeq) box.innerHTML = '<div class="sub" style="padding:8px 2px">Pencarian gagal. Cek internet, atau tempel link dari Google Maps di kolom Lokasi.</div>'; return; }
-  }
-  if (seq !== placeSeq) return;
-  box.innerHTML = (res.length ? res.map((g, i) => `<button type="button" class="presult" data-a="placePick" data-i="${i}">
-      <b>${esc(g.name)}</b><span class="sub">${esc(g.address)}</span>${g.rating ? `<span class="star num">${gRating(g)}</span>` : ''}</button>`).join('')
-    : '<div class="sub" style="padding:8px 2px">Tidak ditemukan. Coba nama lain.</div>')
-    + (note ? `<div class="sub" style="padding:6px 2px;font-size:12px">${esc(note)}</div>` : '');
-  box._results = res;
+  if (Date.now() < googleDownUntil) { box.innerHTML = googleFullHelp; return; }
+  box.innerHTML = '<div class="sub" style="padding:8px 2px">Mencari di Google…</div>';
+  const full = withPlace(q, placeCtx(trip()));
+  let res;
+  try { res = await withTimeout(searchPlaces(full), 8000); }
+  catch (e) { googleDownUntil = Date.now() + 10 * 60 * 1000; console.warn('Google gagal', e); if (seq === placeSeq) box.innerHTML = googleFullHelp; return; }
+  if (seq === placeSeq) showPlaceResults(box, res, '');
 }
 function readRatings(v) {
   const r = {};
@@ -2810,6 +2888,13 @@ const actions = {
   fillRatings() { fillRatings(trip()); },
   setupHelp(d) { openSheetHtml(d.k === 'sync' ? 'Aktifkan berbagi trip' : 'Aktifkan rating Google', setupHelp(d.k)); },
   placeSearch() { runPlaceSearch(true); },
+  async osmSearch() {
+    const inp = $('#f-location'), box = $('#placeResults'); if (!inp || !box) return;
+    const q = inp.value.trim() || ($('#f-title') ? $('#f-title').value.trim() : ''); if (q.length < 3) return;
+    box.innerHTML = '<div class="sub" style="padding:8px 2px">Mencari di OpenStreetMap…</div>';
+    try { showPlaceResults(box, await searchOsm(withPlace(q, placeCtx(trip()))), 'Hasil dari OpenStreetMap, tanpa rating. Rating bisa diambil nanti lewat tombol Ambil rating Google.'); }
+    catch (e) { box.innerHTML = '<div class="sub" style="padding:8px 2px">Pencarian gagal. Cek internet, atau tempel link dari Google Maps.</div>'; }
+  },
   placePick(d, el) {
     const box = $('#placeResults'); const g = box && box._results && box._results[+d.i]; if (!g) return;
     $('#f-gplace').value = JSON.stringify(g);
@@ -2926,7 +3011,7 @@ document.addEventListener('input', (e) => {
   }
   if (e.target.matches('[data-placeinput]') || (e.target.id === 'f-title' && $('#f-location') && !$('#f-location').value.trim())) {
     if (e.target.matches('[data-placeinput]')) { const h = $('#f-gplace'); if (h) h.value = ''; }
-    clearTimeout(placeTimer); placeTimer = setTimeout(runPlaceSearch, 800);
+    clearTimeout(placeTimer); placeTimer = setTimeout(runPlaceSearch, e.target.matches('[data-placeinput]') && isUrl(e.target.value) ? 400 : 800);
   }
   if (e.target.matches('[data-explore]')) {
     exploreQuery = e.target.value;
@@ -2978,6 +3063,9 @@ window.addEventListener('offline', () => render());
 render();
 refreshRates(false);
 setInterval(() => { if (!document.hidden) refreshRates(false); }, LIVE_MAX_AGE);
+setTimeout(rateLinked, 4000);
+setInterval(() => { if (!document.hidden) rateLinked(); }, 20 * 60 * 1000);
+window.addEventListener('online', () => setTimeout(rateLinked, 2000));
 if (syncEnabled() && !state.account) setTimeout(() => fbInit().catch(() => {}), 1500); // siapkan tombol Masuk dengan Google
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshRates(false); });
 startSync();

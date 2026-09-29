@@ -119,6 +119,27 @@ button{cursor:pointer}
 .chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 14px;font-weight:600;font-size:14px}
 .chip[aria-pressed="true"]{background:var(--jade);border-color:var(--jade);color:var(--jade-ink)}
 .maplink{display:block;text-align:center;text-decoration:none}
+.armed{background:var(--amber-soft)!important;color:var(--amber)!important;border-color:var(--amber)!important}
+.tripcard{position:relative}
+.tripcard .trip h3{padding-right:78px}
+.tripdel{position:absolute;top:20px;right:12px;border:1px solid var(--line);background:var(--bg);color:var(--muted);border-radius:8px;padding:4px 10px;font-size:12.5px;font-weight:600;max-width:calc(100% - 24px)}
+.tripdel:hover,.tripdel:focus-visible{color:var(--amber);border-color:var(--amber)}
+.toast{display:flex;align-items:center;gap:12px;max-width:calc(100vw - 32px)}
+.toastbtn{border:none;background:none;color:inherit;font-weight:800;padding:2px 4px;text-decoration:underline;flex:0 0 auto}
+.routecard{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 14px;margin-top:4px}
+.routecard .k{font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.routecard .rl{font-size:14px;font-weight:600;overflow-wrap:anywhere}
+.citybtn{display:inline-flex;align-items:center;gap:5px;border:none;background:var(--jade-soft);color:var(--jade);font-weight:700;font-size:13px;border-radius:999px;padding:3px 10px 3px 7px;margin:4px 0 2px}
+.citybtn svg{width:14px;height:14px}
+.citybtn.unset{background:var(--amber-soft);color:var(--amber)}
+.strip .stripcity{display:block;max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seg{display:flex;gap:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;width:fit-content;max-width:100%}
+.seg button{border:none;background:var(--surface);padding:7px 14px;font-weight:600;font-size:13.5px;color:var(--muted)}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--jade);color:var(--jade-ink)}
+.chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-inline:-16px;padding-inline:16px}
+.chips::-webkit-scrollbar{display:none}
+.chips .chip{flex:0 0 auto}
 .mhint{display:block;min-height:1.2em;font-size:12.5px;font-weight:600;color:var(--jade);margin-top:2px}
 .rgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}
 .rcell{display:flex;flex-direction:column;gap:3px;font-size:12px;font-weight:600;color:var(--muted)}
@@ -241,6 +262,11 @@ const CURRENCIES = [['VND', 'Dong Vietnam (VND)', '₫'], ['THB', 'Baht Thailand
   ['JPY', 'Yen Jepang (JPY)', '¥'], ['KRW', 'Won Korea (KRW)', '₩'], ['CNY', 'Yuan Tiongkok (CNY)', 'CN¥'], ['PHP', 'Peso Filipina (PHP)', '₱'],
   ['USD', 'Dolar AS (USD)', 'US$'], ['EUR', 'Euro (EUR)', '€'], ['AUD', 'Dolar Australia (AUD)', 'A$'], ['SAR', 'Riyal Saudi (SAR)', 'SR']];
 const SYMBOL = Object.fromEntries(CURRENCIES.map((c) => [c[0], c[2]]));
+// Negara tujuan → mata uang otomatis. Negara lain tetap bisa diketik bebas.
+const COUNTRIES = [['Vietnam', 'VND'], ['Thailand', 'THB'], ['Singapura', 'SGD'], ['Malaysia', 'MYR'], ['Jepang', 'JPY'], ['Korea Selatan', 'KRW'],
+  ['Tiongkok', 'CNY'], ['Filipina', 'PHP'], ['Arab Saudi', 'SAR'], ['Australia', 'AUD'], ['Amerika Serikat', 'USD'], ['Indonesia', 'IDR'],
+  ['Prancis', 'EUR'], ['Italia', 'EUR'], ['Jerman', 'EUR'], ['Belanda', 'EUR'], ['Spanyol', 'EUR'], ['Swiss', 'EUR']];
+const countryCur = (name) => { const c = COUNTRIES.find((x) => fold(x[0]) === fold(name)); return c ? c[1] : null; };
 const COLORS = ['#0F6E56', '#185FA5', '#A65A0B', '#A3245A', '#534AB7', '#2F7D8C'];
 const label = (list, v) => (list.find((x) => x[0] === v) || [v, v])[1];
 const PLATFORMS = [['google', 'Google Maps'], ['klook', 'Klook'], ['tripadvisor', 'Tripadvisor'], ['kkday', 'KKday'], ['traveloka', 'Traveloka']];
@@ -252,7 +278,7 @@ const KEY = 'jalan-trip.v1';
  * rates:  kurs otomatis { VND: { idr: 0.692, at: <unix detik>, fetched: <ms> } } dari ExchangeRate-API (update harian).
  * manual: kurs isian sendiri { VND: 0.69 }, dipakai jika useManual[cur] true atau kurs otomatis belum pernah didapat.
  */
-const blank = () => ({ v: 1, trips: [], activeTripId: null, tab: 'plan', rates: {}, manual: {}, useManual: {}, placeCity: 'phu-quoc' });
+const blank = () => ({ v: 1, trips: [], activeTripId: null, tab: 'plan', rates: {}, manual: {}, useManual: {}, placeCity: '', exploreMode: '' });
 let storageOk = true;
 function load() {
   try {
@@ -261,12 +287,41 @@ function load() {
       const s = Object.assign(blank(), JSON.parse(raw));
       if (s.v === 1 && Array.isArray(s.trips)) {
         if (s.rate && !s.manual.VND) { s.manual.VND = s.rate; delete s.rate; } // data versi awal
-        s.trips.forEach((t) => { t.cur = t.cur || 'VND'; });
+        s.trips.forEach(migrateTrip);
         return s;
       }
     }
   } catch (e) { storageOk = false; }
   return blank();
+}
+/*
+ * Trip = satu negara (country) + rentang tanggal. Kota diatur per tanggal di t.days: { '2026-11-17': { city: 'Phu Quoc' } }.
+ * Trip versi lama menyimpan "Kota, Negara" di t.place; dipecah sekali di sini.
+ */
+function migrateTrip(t) {
+  t.cur = t.cur || 'VND';
+  if (!t.days || typeof t.days !== 'object') t.days = {};
+  if (!t.country) {
+    const parts = String(t.place || '').split(',').map((s) => s.trim()).filter(Boolean);
+    t.country = parts.length > 1 ? parts[parts.length - 1] : parts[0] || '';
+    const city = parts.length > 1 ? parts[0] : '';
+    if (city && !Object.keys(t.days).length) dayRange(t.start, t.end).forEach((d) => { t.days[d] = { city }; });
+  }
+  t.place = t.country || t.place || '';
+  return t;
+}
+const cityOf = (t, d) => (t && d && t.days && t.days[d] && t.days[d].city) || '';
+const ctxOf = (t, d) => [cityOf(t, d), t && (t.country || t.place)].filter(Boolean).join(', ');
+function tripCities(t) {
+  const out = [];
+  dayRange(t.start, t.end).forEach((d) => { const c = cityOf(t, d); if (c && !out.some((x) => fold(x) === fold(c))) out.push(c); });
+  return out;
+}
+// "Phu Quoc (4) → Hanoi (3)" mengikuti urutan tanggal
+function routeLabel(t) {
+  const segs = [];
+  dayRange(t.start, t.end).forEach((d) => { const c = cityOf(t, d) || '?'; const last = segs[segs.length - 1]; if (last && last.c === c) last.n++; else segs.push({ c, n: 1 }); });
+  return segs.some((s) => s.c !== '?') ? segs.map((s) => `${s.c === '?' ? 'belum diatur' : s.c} (${s.n})`).join(' → ') : '';
 }
 let state = load();
 function save(fromRemote) {
@@ -282,7 +337,7 @@ const CFG = window.JALAN_CONFIG || {};
  * state.seen menyimpan versi terakhir yang sudah sama dengan server, untuk menghitung perubahan yang perlu dikirim.
  */
 const COLL = ['items', 'places', 'bookings', 'expenses', 'checklist'];
-const META = ['name', 'place', 'start', 'end', 'cur', 'budgetIdr', 'notes', 'color'];
+const META = ['name', 'place', 'country', 'days', 'start', 'end', 'cur', 'budgetIdr', 'notes', 'color'];
 const FB_VERSION = '10.12.2';
 let fb = null, fbLoading = null;
 const subs = {}; // shareId -> unsubscribe
@@ -342,7 +397,7 @@ function pushChanges(t) {
 // Terapkan data server ke trip lokal. Objek lama dipertahankan (diubah di tempat) supaya form yang sedang terbuka tetap tersambung.
 function applyRemote(t, data) {
   const meta = data.meta || {};
-  META.forEach((k) => { if (k in meta && meta[k] !== null) t[k] = meta[k]; });
+  META.forEach((k) => { if (k in meta && meta[k] !== null) t[k] = k === 'days' ? plain(meta[k]) : meta[k]; });
   COLL.forEach((c) => {
     const m = data[c] || {};
     const old = new Map((t[c] || []).map((x) => [x.id, x]));
@@ -353,6 +408,7 @@ function applyRemote(t, data) {
       return Object.assign(o, rx);
     });
   });
+  migrateTrip(t);
 }
 function subscribe(t) {
   if (!fb || !t.shareId || subs[t.shareId]) return;
@@ -457,14 +513,14 @@ function loadMaps() {
   return mapsP;
 }
 const placeCache = new Map();
-async function searchPlaces(query) {
-  const key = fold(query);
+async function searchPlaces(query, n = 5) {
+  const key = n + '|' + fold(query);
   if (placeCache.has(key)) return placeCache.get(key);
   const maps = await loadMaps();
   if (!maps) return [];
   const { Place } = await maps.importLibrary('places');
   const { places } = await Place.searchByText({
-    textQuery: query, maxResultCount: 5, language: 'id',
+    textQuery: query, maxResultCount: n, language: 'id',
     fields: ['id', 'displayName', 'formattedAddress', 'rating', 'userRatingCount', 'googleMapsURI'],
   });
   const out = places.map((p) => ({ pid: p.id, name: p.displayName || '', address: p.formattedAddress || '', rating: p.rating ?? null, count: p.userRatingCount ?? 0, uri: p.googleMapsURI || '', at: Date.now() }));
@@ -531,7 +587,7 @@ function rateLine(cur) {
 }
 function newTrip(data) {
   return Object.assign({
-    id: uid(), name: '', place: '', start: todayStr(), end: addDays(todayStr(), 2), cur: 'VND',
+    id: uid(), name: '', place: '', country: '', days: {}, start: todayStr(), end: addDays(todayStr(), 2), cur: 'VND',
     color: COLORS[state.trips.length % COLORS.length], budgetIdr: 0, notes: '',
     items: [], places: [], bookings: [], expenses: [], checklist: [],
   }, data);
@@ -540,7 +596,8 @@ function newTrip(data) {
 /* ---------- maps links ---------- */
 // Lokasi boleh berupa alamat/nama tempat, atau link yang disalin dari Google Maps (Bagikan → Salin link).
 const isUrl = (s) => /^https?:\/\//i.test(String(s || '').trim());
-const mapsQuery = (t, x) => (x.location && !isUrl(x.location) ? x.location : [x.title, t.place].filter(Boolean).join(', '));
+const whereOf = (t, x) => (x.day ? ctxOf(t, x.day) : (t && (t.country || t.place)) || x.city || '');
+const mapsQuery = (t, x) => (x.location && !isUrl(x.location) ? x.location : [x.title, whereOf(t, x)].filter(Boolean).join(', '));
 const mapsSearch = (q) => 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q);
 const mapsOpen = (t, x) => (x.g && x.g.uri) || (isUrl(x.location) ? x.location.trim() : mapsSearch(mapsQuery(t, x)));
 // Tanpa origin → Google Maps memakai posisi HP saat ini. Place ID membuat tujuannya tepat.
@@ -549,7 +606,7 @@ const mapsNav = (t, x) => {
   return 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + encodeURIComponent(dest) + (x.g && x.g.pid ? '&destination_place_id=' + encodeURIComponent(x.g.pid) : '');
 };
 function reviewLinks(t, x) {
-  const name = [x.title, (t && t.place) || x.city || ''].filter(Boolean).join(' ');
+  const name = [x.title, whereOf(t, x)].filter(Boolean).join(' ');
   const site = (d) => 'https://www.google.com/search?q=' + encodeURIComponent(`site:${d} ${name}`);
   return {
     google: isUrl(x.location) ? x.location.trim() : mapsSearch(name),
@@ -597,7 +654,7 @@ function render() {
       .map(([k, l]) => `<button data-a="tab" data-k="${k}" ${state.tab === k ? 'aria-current="page"' : ''}>${ICON[k]}${l}</button>`).join('')}</div>`;
     const views = { plan: renderPlan, places: renderPlaces, bookings: renderBookings, budget: renderBudget, more: renderMore };
     app.innerHTML = renderTripHeader(t) + (views[state.tab] || renderPlan)(t) + renderFab();
-    if (state.tab === 'places') fetchCatalogRatings(CATALOG[state.placeCity] ? state.placeCity : 'phu-quoc');
+    if (state.tab === 'places') fetchExplore(t);
   }
 }
 
@@ -616,11 +673,13 @@ function renderTrips() {
         const n = dayRange(t.start, t.end).length;
         const until = t.start ? diffDays(today, t.start) : null;
         const tag = until == null ? '' : until > 0 ? `H-${until}` : (t.end && diffDays(today, t.end) >= 0 ? 'Sedang berjalan' : 'Selesai');
-        return `<button class="trip" data-a="open" data-id="${t.id}">
+        return `<div class="tripcard"><button class="trip" data-a="open" data-id="${t.id}">
           <div class="band" style="background:${esc(t.color)}"></div>
-          <div class="in"><h3>${esc(t.name || 'Tanpa nama')}</h3>
-            <div class="meta"><span>${esc(t.place)}${t.place ? ' · ' : ''}${rangeLabel(t.start, t.end)} · ${n} hari</span><span class="count">${tag}</span></div>
-          </div></button>`;
+          <div class="in"><h3>${esc(t.name || 'Tanpa nama')}${t.shareId ? ' <span class="pill s-booked" style="vertical-align:middle">Bersama</span>' : ''}</h3>
+            <div class="meta"><span>${esc(t.country || t.place)}${(t.country || t.place) ? ' · ' : ''}${rangeLabel(t.start, t.end)} · ${n} hari</span><span class="count">${tag}</span></div>
+            ${tripCities(t).length ? `<div class="meta" style="margin-top:2px"><span>${esc(tripCities(t).join(' → '))}</span></div>` : ''}
+          </div></button>
+          <button class="tripdel" data-a="removeTrip" data-id="${t.id}" data-confirm aria-label="Hapus trip ${esc(t.name)}">Hapus</button></div>`;
       }).join('') : `<div class="empty">Belum ada trip. Buat trip baru, lalu isi rencana harian, tempat, booking, dan pengeluaran sendiri.</div>`}
       <button class="btn block" data-a="newTrip">+ Trip baru</button>
       <button class="btn ghost block" data-a="joinOpen">Gabung trip teman</button>
@@ -633,7 +692,7 @@ function renderTrips() {
 function renderTripHeader(t) {
   return `<header class="top">
     <button class="iconbtn" data-a="home" aria-label="Semua trip">←</button>
-    <div class="grow"><h1>${esc(t.name || 'Trip')}</h1><div class="sub">${esc(t.place)}${t.place ? ' · ' : ''}${rangeLabel(t.start, t.end)}</div>${syncBadge(t)}</div>
+    <div class="grow"><h1>${esc(t.name || 'Trip')}</h1><div class="sub">${esc(t.country || t.place)}${(t.country || t.place) ? ' · ' : ''}${rangeLabel(t.start, t.end)}</div>${syncBadge(t)}</div>
     <button class="iconbtn" data-a="editTrip" aria-label="Ubah trip">Ubah</button>
   </header>${storageWarning()}`;
 }
@@ -650,13 +709,19 @@ function renderPlan(t) {
   const days = dayRange(t.start, t.end);
   const orphan = t.items.filter((i) => !days.includes(i.day));
   const strip = `<div class="strip">${days.map((d, i) => {
-    const D = parseD(d);
-    return `<button data-a="jump" data-d="${d}"><span>${WD[D.getUTCDay()]}</span><b>${D.getUTCDate()}</b><span>Hari ${i + 1}</span></button>`;
+    const D = parseD(d); const c = cityOf(t, d);
+    return `<button data-a="jump" data-d="${d}"><span>${WD[D.getUTCDay()]}</span><b>${D.getUTCDate()}</b><span class="stripcity">${esc(c || 'Hari ' + (i + 1))}</span></button>`;
   }).join('')}</div>`;
+  const route = routeLabel(t);
+  const unset = days.filter((d) => !cityOf(t, d)).length;
+  const summary = `<div class="routecard">
+      <div><div class="k">Rute kota</div><div class="rl">${route ? esc(route) : 'Belum ada kota yang diatur'}</div></div>
+      <button class="btn ${unset === days.length ? '' : 'ghost '}small" data-a="setCity" data-d="${days.find((d) => !cityOf(t, d)) || days[0] || ''}">${unset ? `Atur kota (${unset} hari)` : 'Ubah kota'}</button>
+    </div>`;
   const body = days.map((d, i) => renderDay(t, d, i)).join('');
   const orphanHtml = orphan.length ? `<section class="day"><div class="dayhead"><div class="d"><div class="k">Di luar tanggal trip</div><h2>${orphan.length} aktivitas</h2><div class="m">Tanggal trip diubah. Buka aktivitas untuk memindahkan harinya.</div></div></div>
     <div class="tl">${sortItems(orphan).map((it) => renderItem(t, it, true)).join('')}</div></section>` : '';
-  return strip + body + orphanHtml;
+  return strip + (days.length ? summary : '') + body + orphanHtml;
 }
 
 function renderDay(t, d, i) {
@@ -668,6 +733,7 @@ function renderDay(t, d, i) {
   return `<section class="day" id="day-${d}">
     <div class="dayhead">
       <div class="d"><div class="k">Hari ${i + 1}</div><h2>${dayLabel(d)}</h2>
+        <button class="citybtn ${cityOf(t, d) ? '' : 'unset'}" data-a="setCity" data-d="${d}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-12a7 7 0 0 1 14 0c0 5.8-7 12-7 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="9" r="2.5" fill="currentColor"/></svg>${cityOf(t, d) ? esc(cityOf(t, d)) : 'Atur kota'}</button>
         <div class="m num">${items.length} aktivitas${cost ? ` · ±Rp${fmtN(cost)}` : ''}</div></div>
       <div class="row">
         ${route ? `<a class="btn ghost small" href="${esc(route)}" target="_blank" rel="noopener">Rute</a>` : ''}
@@ -708,11 +774,6 @@ let exploreQuery = '';
 function renderPlaces(t) {
   const saved = [...t.places].sort((a, b) => ratingValue(b) - ratingValue(a));
   const missing = placesEnabled() ? t.places.concat(t.items).filter((x) => !x.g && x.type !== 'transport').length : 0;
-  const city = CATALOG[state.placeCity] ? state.placeCity : 'phu-quoc';
-  const savedNames = new Set(t.places.map((p) => fold(p.title)).concat(t.items.map((i) => fold(i.title))));
-  const q = fold(exploreQuery.trim());
-  const list = CATALOG[city].items.filter((c) => !q || fold([c.title, c.location, c.note, c.type].join(' ')).includes(q));
-  const searchPlace = exploreQuery.trim() ? `${exploreQuery.trim()} ${CATALOG[city].place}` : `tempat wisata ${CATALOG[city].place}`;
   return `<div class="section-h"><h2>Tempat simpanan</h2><span class="muted num">${t.places.length}</span></div>
     ${saved.length ? `<div class="card">${saved.map((p) => `
       <div class="li"><div class="main">
@@ -729,40 +790,107 @@ function renderPlaces(t) {
     ${missing ? `<button class="btn ghost small block" style="margin-top:10px" data-a="fillRatings">Ambil rating Google untuk ${missing} tempat & aktivitas</button>` : ''}
     ${placesEnabled() ? '' : `<button class="btn ghost small block" style="margin-top:10px" data-a="setupHelp" data-k="places">Aktifkan rating Google otomatis</button>`}
 
-    <div class="section-h"><h2>Jelajahi</h2></div>
-    <div class="row" style="gap:6px;margin-bottom:10px">${Object.entries(CATALOG).map(([k, c]) => `<button class="chip" data-a="placeCity" data-k="${k}" aria-pressed="${k === city}">${esc(c.label)}</button>`).join('')}</div>
-    <div class="f" style="margin-bottom:8px"><label for="exploreSearch" class="sr-only">Cari tempat</label>
-      <input id="exploreSearch" type="search" data-explore value="${esc(exploreQuery)}" placeholder="Cari: pantai, cong troi, kuliner…" autocomplete="off"></div>
-    <a class="btn ghost small block maplink" href="${esc(mapsSearch(searchPlace))}" target="_blank" rel="noopener">Cari "${esc(exploreQuery.trim() || 'tempat wisata')}" di Google Maps →</a>
-    <div class="card" style="margin-top:10px">${list.length ? list.map((c, i) => {
-      const has = savedNames.has(fold(c.title));
-      const rl = reviewLinks({ place: CATALOG[city].place }, c);
-      const g = catG(c);
-      return `<div class="li"><div class="main">
-        <div class="row" style="gap:6px"><span class="pill t-${c.type}">${esc(label(ITEM_TYPES, c.type))}</span>${g && g.rating ? `<span class="star num">${gRating(g)}</span>` : ''}</div>
-        <div class="title" style="margin-top:4px">${esc(c.title)}</div>
-        <div class="sub">${esc(c.note)}</div>
-        <div class="acts">
-          ${has ? '<button disabled>Tersimpan</button>' : `<button data-a="saveCatalog" data-city="${city}" data-i="${CATALOG[city].items.indexOf(c)}">+ Simpan</button>`}
-          <a class="go" href="${esc((g && g.uri) || mapsSearch(c.location))}" target="_blank" rel="noopener">Maps</a>
-          <a href="${esc(rl.klook)}" target="_blank" rel="noopener">Klook</a>
-          <a href="${esc(rl.tripadvisor)}" target="_blank" rel="noopener">Tripadvisor</a>
-        </div></div></div>`;
-    }).join('') : '<div class="li"><div class="main muted">Tidak ada di daftar. Pakai tombol Google Maps di atas.</div></div>'}</div>`;
+    ${renderExplore(t)}`;
 }
 
-/* Rating daftar Jelajahi diambil dari Google sekali, lalu disegarkan setelah 30 hari. */
+/* ---------- Jelajahi: destinasi per kota di negara tujuan ----------
+ * Kota diambil dari rute trip (dan daftar pilihan untuk negara itu).
+ * "Pilihan" = daftar kurasi (Phu Quoc, Hanoi). "Wisata"/"Kuliner" = diambil dari Google, disimpan 30 hari.
+ */
+const catalogCitiesFor = (country) => Object.values(CATALOG).filter((c) => fold(c.country) === fold(country)).map((c) => c.label);
+const findCatalog = (city, country) => Object.entries(CATALOG).find(([, c]) => fold(c.label) === fold(city) && (!country || fold(c.country) === fold(country))) || null;
+const exploreCities = (t) => [...new Set(tripCities(t).concat(catalogCitiesFor(t.country)))];
+const exploreKey = (mode, city, country) => fold(`${mode}|${city}|${country}`).replace(/[^a-z0-9|]+/g, '-');
+const exploreLoading = {};
+function exploreState(t) {
+  const cities = exploreCities(t);
+  const city = cities.find((c) => fold(c) === fold(state.placeCity || '')) || cities[0] || '';
+  const country = t.country || t.place || '';
+  const cat = city ? findCatalog(city, country) : null;
+  const modes = (cat ? [['pilihan', 'Pilihan']] : []).concat([['wisata', 'Wisata'], ['kuliner', 'Kuliner']]);
+  const mode = modes.some((m) => m[0] === state.exploreMode) ? state.exploreMode : modes[0][0];
+  return { cities, city, country, cat, modes, mode, key: exploreKey(mode, city, country) };
+}
+function renderExplore(t) {
+  const { cities, city, country, cat, modes, mode, key } = exploreState(t);
+  const savedNames = new Set(t.places.map((p) => fold(p.title)).concat(t.items.map((i) => fold(i.title))));
+  const q = fold(exploreQuery.trim());
+  const head = `<div class="section-h"><h2>Jelajahi ${esc(country)}</h2></div>`;
+  if (!city) {
+    return head + `<div class="empty">Atur kota di tab Rencana (tombol <b>Atur kota</b> di tiap hari). Setelah itu destinasi tiap kota muncul di sini.</div>
+      <a class="btn ghost small block maplink" style="margin-top:10px" href="${esc(mapsSearch('tempat wisata ' + country))}" target="_blank" rel="noopener">Cari tempat wisata di ${esc(country || 'negara tujuan')} di Google Maps →</a>`;
+  }
+  const searchWhat = exploreQuery.trim() || (mode === 'kuliner' ? 'restoran' : 'tempat wisata');
+  let body;
+  if (mode === 'pilihan') {
+    const [ckey, c] = cat;
+    const list = c.items.filter((x) => !q || fold([x.title, x.location, x.note, x.type].join(' ')).includes(q));
+    body = list.map((x) => {
+      const g = catG(x); const rl = reviewLinks({ place: c.place }, x);
+      return exploreRow({ title: x.title, type: x.type, note: x.note, g, maps: (g && g.uri) || mapsSearch(x.location), rl,
+        save: savedNames.has(fold(x.title)) ? null : `data-a="saveCatalog" data-city="${ckey}" data-i="${c.items.indexOf(x)}"` });
+    }).join('');
+  } else if (!placesEnabled()) {
+    body = `<div class="li"><div class="main muted">Daftar ${mode === 'kuliner' ? 'kuliner' : 'tempat wisata'} otomatis butuh Google Maps. Pakai tombol pencarian di atas untuk membuka Google Maps.</div></div>`;
+  } else {
+    const cache = (state.gexplore || {})[key];
+    const items = cache ? cache.items.filter((g) => !q || fold(g.name + ' ' + g.address).includes(q)) : [];
+    body = !cache ? `<div class="li"><div class="main muted">${exploreLoading[key] === 'fail' ? 'Gagal mengambil daftar dari Google. Coba lagi saat online.' : `Mengambil ${mode === 'kuliner' ? 'kuliner' : 'tempat wisata'} populer di ${esc(city)} dari Google…`}</div></div>`
+      : items.map((g) => exploreRow({ title: g.name, type: mode === 'kuliner' ? 'food' : 'activity', note: g.address, g, maps: g.uri || mapsSearch(g.name + ', ' + city), rl: reviewLinks({ place: `${city} ${country}` }, { title: g.name }),
+          save: savedNames.has(fold(g.name)) ? null : `data-a="saveExplore" data-key="${esc(key)}" data-i="${cache.items.indexOf(g)}"` })).join('')
+        || '<div class="li"><div class="main muted">Tidak ada yang cocok.</div></div>';
+  }
+  return head + `
+    <div class="row chips" style="margin-bottom:8px">${cities.map((c) => `<button class="chip" data-a="placeCity" data-k="${esc(c)}" aria-pressed="${fold(c) === fold(city)}">${esc(c)}</button>`).join('')}</div>
+    <div class="row seg" role="group" aria-label="Jenis">${modes.map(([k, l]) => `<button data-a="exploreMode" data-k="${k}" aria-pressed="${k === mode}">${l}</button>`).join('')}</div>
+    <div class="f" style="margin:10px 0 8px"><label for="exploreSearch" class="sr-only">Cari tempat</label>
+      <input id="exploreSearch" type="search" data-explore value="${esc(exploreQuery)}" placeholder="Saring daftar di ${esc(city)}…" autocomplete="off"></div>
+    <a class="btn ghost small block maplink" href="${esc(mapsSearch(`${searchWhat} ${city}, ${country}`))}" target="_blank" rel="noopener">Cari "${esc(searchWhat)}" di ${esc(city)} lewat Google Maps →</a>
+    <div class="card" style="margin-top:10px">${body || '<div class="li"><div class="main muted">Tidak ada yang cocok.</div></div>'}</div>`;
+}
+function exploreRow({ title, type, note, g, maps, rl, save }) {
+  return `<div class="li"><div class="main">
+    <div class="row" style="gap:6px"><span class="pill t-${type}">${esc(label(ITEM_TYPES, type))}</span>${g && g.rating ? `<span class="star num">${gRating(g)}</span>` : ''}</div>
+    <div class="title" style="margin-top:4px">${esc(title)}</div>
+    ${note ? `<div class="sub">${esc(note)}</div>` : ''}
+    <div class="acts">
+      ${save ? `<button ${save}>+ Simpan</button>` : '<button disabled>Tersimpan</button>'}
+      <a class="go" href="${esc(maps)}" target="_blank" rel="noopener">Maps</a>
+      <a href="${esc(rl.klook)}" target="_blank" rel="noopener">Klook</a>
+      <a href="${esc(rl.tripadvisor)}" target="_blank" rel="noopener">Tripadvisor</a>
+    </div></div></div>`;
+}
+async function fetchExplore(t) {
+  if (!placesEnabled() || !navigator.onLine) return;
+  const { city, country, cat, mode, key } = exploreState(t);
+  if (!city) return;
+  if (mode === 'pilihan') { fetchCatalogRatings(cat[1]); return; }
+  const cache = (state.gexplore || {})[key];
+  if ((cache && Date.now() - cache.at < 30 * 86400000) || exploreLoading[key] === true) return;
+  exploreLoading[key] = true;
+  try {
+    const q = `${mode === 'kuliner' ? 'restoran dan kuliner populer' : 'tempat wisata populer'} di ${city}, ${country}`;
+    const items = await searchPlaces(q, 15);
+    state.gexplore = state.gexplore || {};
+    state.gexplore[key] = { at: Date.now(), items: items.sort((a, b) => (b.rating || 0) * Math.log10(10 + b.count) - (a.rating || 0) * Math.log10(10 + a.count)) };
+    exploreLoading[key] = false;
+    save(true);
+  } catch (e) { exploreLoading[key] = 'fail'; console.warn(e); }
+  if (state.tab === 'places') softRender();
+}
+
+/* Rating daftar pilihan diambil dari Google sekali, lalu disegarkan setelah 30 hari. */
 const catG = (c) => (state.gcat || {})[fold(c.location)] || null;
 let catQueue = false;
-async function fetchCatalogRatings(city) {
-  if (catQueue || !placesEnabled() || !navigator.onLine) return;
-  const todo = CATALOG[city].items.filter((c) => { const g = catG(c); return !g || Date.now() - g.at > 30 * 86400000; });
+async function fetchCatalogRatings(cat) {
+  if (catQueue || !cat || !placesEnabled() || !navigator.onLine) return;
+  const todo = cat.items.filter((c) => { const g = catG(c); return !g || Date.now() - g.at > 30 * 86400000; });
   if (!todo.length) return;
   catQueue = true;
   state.gcat = state.gcat || {};
   try {
     for (const c of todo) {
-      const res = await searchPlaces(withPlace(c.location, CATALOG[city].place));
+      const res = await searchPlaces(withPlace(c.location, cat.place));
       state.gcat[fold(c.location)] = res[0] || { rating: null, count: 0, uri: '', at: Date.now() };
       save(true); if (state.tab === 'places') softRender();
     }
@@ -776,7 +904,7 @@ async function fillRatings(t) {
   let ok = 0;
   for (const x of list) {
     try {
-      const q = withPlace(isUrl(x.location) || !x.location ? x.title : x.location, t.place);
+      const q = withPlace(isUrl(x.location) || !x.location ? x.title : x.location, whereOf(t, x));
       const res = await searchPlaces(q);
       if (res[0]) { x.g = res[0]; ok++; }
     } catch (e) { toast('Gagal mengambil rating. Cek API key Google.'); break; }
@@ -786,7 +914,7 @@ async function fillRatings(t) {
 
 /* Daftar tempat pilihan. */
 const CATALOG = {
-  'phu-quoc': { label: 'Phu Quoc', place: 'Phu Quoc, Vietnam', items: [
+  'phu-quoc': { label: 'Phu Quoc', country: 'Vietnam', place: 'Phu Quoc, Vietnam', items: [
     { title: 'Kiss Bridge (Cầu Hôn)', type: 'photo', location: 'Kiss Bridge, Sunset Town, Phu Quoc', note: 'Sunset ±17:45–18:15. Titik nonton Symphony of the Sea gratis.' },
     { title: 'Kiss of the Sea', type: 'activity', location: 'Kiss of the Sea, Sunset Town, Phu Quoc', note: 'Show 21:00–21:30 + fireworks 21:30. Selasa tanpa live performer.' },
     { title: 'Symphony of the Sea', type: 'activity', location: 'Sunset Town, An Thoi, Phu Quoc', note: 'Show 19:35–20:10, gratis dari luar tribun.' },
@@ -806,7 +934,7 @@ const CATALOG = {
     { title: 'RuNam Cafe', type: 'food', location: 'RuNam Cafe, Sunset Town, Phu Quoc', note: 'Pemandangan Kiss Bridge.' },
     { title: 'Merci Hotel Sunset Town', type: 'stay', location: 'Merci Hotel, 167 Milan St, Sunset Town, An Thoi', note: 'Balkon menghadap fireworks, 5 menit ke cable car.' },
   ] },
-  hanoi: { label: 'Hanoi', place: 'Hanoi, Vietnam', items: [
+  hanoi: { label: 'Hanoi', country: 'Vietnam', place: 'Hanoi, Vietnam', items: [
     { title: 'Danau Hoan Kiem (Hồ Hoàn Kiếm)', type: 'photo', location: 'Hoan Kiem Lake, Hanoi', note: 'Pusat kota, Jembatan Huc dan Kuil Ngoc Son.' },
     { title: 'Old Quarter (Phố Cổ)', type: 'activity', location: 'Hanoi Old Quarter', note: 'Jalan-jalan sempit penuh toko dan kuliner.' },
     { title: 'Train Street', type: 'photo', location: 'Hanoi Train Street', note: 'Rel kereta di antara rumah dan kafe.' },
@@ -925,7 +1053,7 @@ function renderMore(t) {
     <div class="stack">
       <button class="btn ghost block" data-a="exportOpen">Salin cadangan trip ini</button>
       <button class="btn ghost block" data-a="importOpen">Pulihkan dari cadangan</button>
-      <button class="btn danger block" data-a="deleteTrip" data-confirm>Hapus trip ini</button>
+      <button class="btn danger block" data-a="deleteTrip" data-confirm>${t.shareId ? 'Hapus trip ini dari HP ini' : 'Hapus trip ini'}</button>
     </div>
     <p class="muted" style="font-size:12.5px;margin-top:14px">Data tersimpan di browser perangkat ini. Salin cadangan sebelum ganti HP atau menghapus data browser.</p>`;
 }
@@ -955,7 +1083,8 @@ function field(f) {
   }
   else if (f.type === 'ratings') input = `<div class="rgrid">${PLATFORMS.map(([k, l]) => `<label class="rcell"><span>${l}</span><input name="r_${k}" type="number" inputmode="decimal" min="0" max="5" step="0.1" placeholder="4.5" value="${esc((v && v[k]) || '')}"></label>`).join('')}</div>`;
   else if (f.type === 'number') input = `<input id="${id}" name="${f.name}" type="text" inputmode="decimal" autocomplete="off" data-num="${f.dec ?? 2}" value="${esc(v ? fmtInput(+v, f.dec ?? 2) : '')}" placeholder="${esc(f.placeholder || '')}" ${req}>`;
-  else input = `<input id="${id}" name="${f.name}" type="${f.type || 'text'}" value="${esc(v)}" placeholder="${esc(f.placeholder || '')}" ${req}>`;
+  else input = `<input id="${id}" name="${f.name}" type="${f.type || 'text'}" value="${esc(v)}" placeholder="${esc(f.placeholder || '')}" ${req}${f.datalist ? ` list="${id}-list" autocomplete="off"` : ''}>`
+    + (f.datalist ? `<datalist id="${id}-list">${f.datalist.map((o) => `<option value="${esc(o)}"></option>`).join('')}</datalist>` : '');
   const hint = f.hint ? `<small class="muted" style="font-size:12px">${placesEnabled() ? 'Ketik nama tempat, pilihan dari Google muncul otomatis beserta rating dan link Maps-nya.' : 'Bisa juga tempel link dari Google Maps (Bagikan → Salin link).'}</small>` : '';
   return `<div class="f"><label for="${id}">${esc(f.label)}</label>${input}${hint}</div>`;
 }
@@ -987,9 +1116,15 @@ document.addEventListener('submit', (e) => {
 });
 
 let toastTimer;
-function toast(msg) {
+function toast(msg, actionLabel, onAction, ms) {
   let el = $('.toast'); if (!el) { el = document.createElement('div'); el.className = 'toast'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
-  el.textContent = msg; clearTimeout(toastTimer); toastTimer = setTimeout(() => el.remove(), 1800);
+  el.textContent = msg;
+  if (actionLabel) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'toastbtn'; b.textContent = actionLabel;
+    b.addEventListener('click', () => { clearTimeout(toastTimer); el.remove(); onAction(); });
+    el.appendChild(b);
+  }
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.remove(), ms || 1800);
 }
 /* ---------- angka format Indonesia: titik = ribuan, koma = desimal (1.250.000,50) ---------- */
 function num(s) {
@@ -1094,7 +1229,8 @@ async function runPlaceSearch(immediate) {
   box.innerHTML = '<div class="sub" style="padding:8px 2px">Mencari di Google…</div>';
   try {
     const t = trip();
-    const res = await searchPlaces(withPlace(q, t && t.place));
+    const dayEl = $('#f-day'); // form aktivitas: cari di kota hari itu; form tempat: di negara tujuan
+    const res = await searchPlaces(withPlace(q, t ? (dayEl ? ctxOf(t, dayEl.value) : (t.country || t.place)) : ''));
     if (seq !== placeSeq) return;
     box.innerHTML = res.length ? res.map((g, i) => `<button type="button" class="presult" data-a="placePick" data-i="${i}">
         <b>${esc(g.name)}</b><span class="sub">${esc(g.address)}</span>${g.rating ? `<span class="star num">${gRating(g)}</span>` : ''}</button>`).join('')
@@ -1137,19 +1273,52 @@ function tripForm(t) {
     submit: isNew ? 'Buat trip' : 'Simpan',
     fields: [
       { name: 'name', label: 'Nama trip', value: t?.name, placeholder: 'Liburan Vietnam', required: true },
-      { name: 'place', label: 'Tujuan', value: t?.place, placeholder: 'Phu Quoc, Vietnam' },
+      { name: 'country', label: 'Negara tujuan', value: t?.country || t?.place, placeholder: 'Vietnam', datalist: COUNTRIES.map((c) => c[0]) },
       { name: 'start', label: 'Mulai', type: 'date', value: t?.start || todayStr(), half: true },
       { name: 'end', label: 'Selesai', type: 'date', value: t?.end || addDays(todayStr(), 3), half: true },
-      { name: 'cur', label: 'Mata uang negara tujuan', type: 'select', options: CURRENCIES.map((c) => [c[0], c[1]]), value: t?.cur || 'VND' },
+      { name: 'cur', label: 'Mata uang (otomatis dari negara)', type: 'select', options: CURRENCIES.map((c) => [c[0], c[1]]), value: t?.cur || 'VND' },
     ],
     onSubmit(v) {
       if (!v.start) { toast('Isi tanggal mulai'); return false; }
       const end = v.end && v.end >= v.start ? v.end : v.start;
       if (diffDays(v.start, end) > 59) { toast('Maksimal 60 hari per trip'); return false; }
-      const data = { name: v.name, place: v.place, start: v.start, end, cur: v.cur || 'VND' };
-      if (isNew) { const nt = newTrip(data); state.trips.push(nt); state.activeTripId = nt.id; state.tab = 'plan'; }
-      else Object.assign(t, data);
+      const country = (COUNTRIES.find((c) => fold(c[0]) === fold(v.country)) || [v.country])[0];
+      const data = { name: v.name, country, place: country, start: v.start, end, cur: v.cur || 'VND' };
+      if (isNew) {
+        const nt = newTrip(data); state.trips.push(nt); state.activeTripId = nt.id; state.tab = 'plan';
+        setTimeout(() => cityForm(nt, nt.start), 50); // langsung atur kota hari pertama
+      } else Object.assign(t, data);
       setTimeout(() => refreshRates(false), 0);
+    },
+    onDelete: isNew ? null : () => { removeTrip(t.id); return 'silent'; },
+  });
+}
+
+// Atur kota untuk satu tanggal, sekaligus bisa diterapkan ke tanggal-tanggal berikutnya.
+function cityForm(t, day) {
+  const days = dayRange(t.start, t.end);
+  if (!days.length) return;
+  if (!days.includes(day)) day = days[0];
+  const from = days.indexOf(day);
+  // default "sampai": hari terakhir yang masih kosong atau berkota sama, berurutan dari hari ini
+  const cur = cityOf(t, day);
+  let to = from;
+  while (to + 1 < days.length && cityOf(t, days[to + 1]) === cur) to++;
+  const suggestions = [...new Set(tripCities(t).concat(catalogCitiesFor(t.country)))];
+  openForm({
+    title: `Kota untuk ${dayLabel(day)}`, submit: 'Simpan kota',
+    fields: [
+      { name: 'city', label: `Kota di ${t.country || 'negara tujuan'}`, value: cur, placeholder: suggestions[0] || 'Nama kota', datalist: suggestions },
+      { name: 'until', label: 'Berlaku sampai', type: 'select', value: days[to],
+        options: days.slice(from).map((d, i) => [d, `${i === 0 ? 'Hari ini saja' : 'Sampai'} · Hari ${from + i + 1}, ${dayLabel(d)}`]) },
+    ],
+    onSubmit(v) {
+      const city = v.city.trim().replace(/\s+/g, ' ');
+      const known = suggestions.find((s) => fold(s) === fold(city));
+      const end = days.indexOf(v.until);
+      t.days = Object.assign({}, t.days);
+      for (let i = from; i <= end; i++) { if (city) t.days[days[i]] = { city: known || city }; else delete t.days[days[i]]; }
+      if (city) { state.placeCity = known || city; toast(`${known || city}: ${end - from + 1} hari`); }
     },
   });
 }
@@ -1370,7 +1539,8 @@ function phuQuocTemplate(start) {
   ];
   const counters = {}; items.forEach((it) => { counters[it.day] = (counters[it.day] || 0) + 1; it.order = counters[it.day]; });
   return newTrip({
-    name: 'Phu Quoc', place: 'Phu Quoc, Vietnam', start, end: D(3), color: '#0F6E56', items,
+    name: 'Phu Quoc', country: 'Vietnam', place: 'Vietnam', start, end: D(3), color: '#0F6E56', items,
+    days: Object.fromEntries([0, 1, 2, 3].map((n) => [D(n), { city: 'Phu Quoc' }])),
     places: [
       { id: uid(), title: 'Khem Beach (Bãi Kem)', type: 'activity', location: 'Khem Beach, Phu Quoc', note: 'Pasir putih, terbaik 16:00–17:30. ±15–20 menit dari Sunset Town.' },
     ],
@@ -1400,6 +1570,24 @@ function templateForm() {
 
 /* ---------- actions ---------- */
 const find = (arr, id) => arr.find((x) => x.id === id);
+/*
+ * Hapus trip dari HP ini. Trip bersama hanya dilepas dari HP ini; HP teman tetap menyimpannya.
+ * Bisa diurungkan beberapa detik lewat tombol di notifikasi.
+ */
+function removeTrip(id) {
+  const idx = state.trips.findIndex((x) => x.id === id);
+  if (idx < 0) return;
+  const t = state.trips[idx];
+  if (t.shareId) unsubscribe(t.shareId);
+  state.trips.splice(idx, 1);
+  if (state.activeTripId === id) state.activeTripId = null;
+  save(true); render(); window.scrollTo(0, 0);
+  toast(t.shareId ? `"${t.name}" dihapus dari HP ini. HP teman tetap menyimpannya.` : `"${t.name}" dihapus`, 'Urungkan', () => {
+    state.trips.splice(Math.min(idx, state.trips.length), 0, t);
+    save(true); render(); if (t.shareId) startSync();
+    toast('Trip dikembalikan');
+  }, 6000);
+}
 function moveItem(t, id, dir) {
   const it = find(t.items, id); if (!it) return;
   const list = sortItems(t.items.filter((x) => x.day === it.day));
@@ -1428,7 +1616,15 @@ const actions = {
     save(); render(); toast('Diurutkan berdasarkan jam');
   },
   reviews(d) { const t = trip(); const x = find(t[d.kind], d.id); if (x) reviewSheet(t, d.kind, x); },
-  placeCity(d) { state.placeCity = d.k; save(); render(); },
+  placeCity(d) { state.placeCity = d.k; exploreQuery = ''; save(true); render(); },
+  exploreMode(d) { state.exploreMode = d.k; save(true); render(); },
+  saveExplore(d) {
+    const cache = (state.gexplore || {})[d.key]; const g = cache && cache.items[+d.i]; if (!g) return;
+    const kuliner = d.key.startsWith('kuliner');
+    trip().places.push({ id: uid(), title: g.name, type: kuliner ? 'food' : 'activity', location: [g.name, g.address].filter(Boolean).join(', '), note: '', g });
+    save(); render(); toast('Tersimpan di Tempat simpanan');
+  },
+  setCity(d) { const t = trip(); cityForm(t, d.d || t.start); },
   saveCatalog(d) {
     const c = CATALOG[d.city] && CATALOG[d.city].items[+d.i]; if (!c) return;
     const g = catG(c);
@@ -1450,7 +1646,7 @@ const actions = {
     const t = trip(); const x = find(t[d.kind], d.id); if (!x) return;
     try {
       placeCache.clear();
-      const res = await searchPlaces(x.g && x.g.name ? withPlace(x.g.name, t.place) : withPlace(isUrl(x.location) || !x.location ? x.title : x.location, t.place));
+      const res = await searchPlaces(x.g && x.g.name ? withPlace(x.g.name, whereOf(t, x)) : withPlace(isUrl(x.location) || !x.location ? x.title : x.location, whereOf(t, x)));
       if (res[0]) { x.g = res[0]; save(); render(); reviewSheet(t, d.kind, x); toast('Rating diperbarui'); } else toast('Tempat tidak ditemukan di Google');
     } catch (e) { toast('Gagal mengambil rating'); }
   },
@@ -1486,10 +1682,11 @@ const actions = {
   copyExport() { copyText($('#exportText').value, $('#exportText')); },
   importOpen() { importOpen(); },
   doImport() { doImport(); },
-  deleteTrip() { state.trips = state.trips.filter((x) => x.id !== state.activeTripId); state.activeTripId = null; save(); render(); toast('Trip dihapus'); },
+  deleteTrip() { removeTrip(state.activeTripId); },
+  removeTrip(d) { removeTrip(d.id); },
   closeSheet() { closeSheet(); },
   scrim(d, el, e) { if (e.target === el) closeSheet(); },
-  sheetDelete() { if (sheetDelete) { sheetDelete(); closeSheet(); save(); render(); toast('Dihapus'); } },
+  sheetDelete() { if (sheetDelete) { const del = sheetDelete; closeSheet(); const r = del(); save(); render(); if (r !== 'silent') toast('Dihapus'); } },
 };
 
 // Tombol hapus butuh dua ketukan (dialog confirm() tidak tersedia di semua tampilan).
@@ -1504,8 +1701,8 @@ document.addEventListener('click', (e) => {
   if (el.type === 'checkbox') { actions[a] && actions[a](el.dataset, el, e); return; }
   if ('confirm' in el.dataset && !armed.get(el)) {
     e.preventDefault();
-    const orig = el.textContent; el.textContent = 'Ketuk lagi untuk hapus'; armed.set(el, true);
-    setTimeout(() => { if (el.isConnected) { el.textContent = orig; armed.delete(el); } }, 3000);
+    const orig = el.textContent; el.textContent = 'Ketuk lagi untuk hapus'; el.classList.add('armed'); armed.set(el, true);
+    setTimeout(() => { if (el.isConnected) { el.textContent = orig; el.classList.remove('armed'); armed.delete(el); } }, 3000);
     return;
   }
   if (actions[a]) { e.preventDefault(); actions[a](el.dataset, el, e); }
@@ -1518,6 +1715,7 @@ let notesTimer;
 document.addEventListener('input', (e) => {
   const t = trip();
   if (e.target.matches('[data-notes]') && t) { t.notes = e.target.value; clearTimeout(notesTimer); notesTimer = setTimeout(save, 400); }
+  if (e.target.id === 'f-country') { const c = countryCur(e.target.value); const sel = $('#f-cur'); if (c && sel) sel.value = c; }
   if (e.target.matches('[data-num]')) formatNumInput(e.target, e.inputType === 'insertText' && (e.data === '.' || e.data === ','));
   if (e.target.matches('[data-money]')) refreshMoneyHint(e.target);
   if (e.target.matches('[data-conv]') && t) {

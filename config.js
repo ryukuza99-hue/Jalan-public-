@@ -16,5 +16,5 @@ window.JALAN_CONFIG = {
     appId: "1:940767777025:web:93740829d230f64393cb00",
     measurementId: "G-1TVFWW4F3M",
   },
-  googleMapsKey: '',
+  googleMapsKey: 'AIzaSyCCXdBjg-e_eCdH1iYBKoPPRD2p2qncy0U',
 };

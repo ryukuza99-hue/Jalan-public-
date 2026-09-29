@@ -68,6 +68,9 @@ button{cursor:pointer}
 .t-activity{background:var(--sea-soft);color:var(--sea)}
 .t-food{background:var(--amber-soft);color:var(--amber)}
 .t-transport{background:var(--sunk);color:var(--ink)}
+.t-flight{background:var(--sea-soft);color:var(--ink)}
+button.pill{border:0;cursor:pointer;font-family:inherit}
+.linkbtn{border:0;background:none;padding:0;color:var(--sea);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
 .t-stay{background:var(--violet-soft);color:var(--violet)}
 .t-photo{background:var(--rose-soft);color:var(--rose)}
 .t-other{background:var(--sunk);color:var(--muted)}
@@ -188,6 +191,12 @@ button{cursor:pointer}
 .chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-inline:-16px;padding-inline:16px}
 .chips::-webkit-scrollbar{display:none}
 .chips .chip{flex:0 0 auto}
+.chip:disabled{opacity:.5}
+.recs{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.recb{font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px;text-decoration:none;background:var(--sunk);color:var(--ink)}
+.rec-tiktok{background:#111;color:#fff}
+.rec-instagram{background:var(--rose-soft);color:var(--rose)}
+.rec-youtube{background:#fde8e8;color:#b3261e}
 .mhint{display:block;min-height:1.2em;font-size:12.5px;font-weight:600;color:var(--jade);margin-top:2px}
 .rgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}
 .rcell{display:flex;flex-direction:column;gap:3px;font-size:12px;font-weight:600;color:var(--muted)}
@@ -250,6 +259,7 @@ button{cursor:pointer}
 .f input,.f select,.f textarea{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:10px 12px;font-size:16px}
 .f textarea{min-height:84px;resize:vertical}
 .f2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+[hidden]{display:none!important}
 .money{display:grid;grid-template-columns:1fr 92px;gap:8px}
 .sheet .foot{display:flex;gap:8px;margin-top:6px}
 .sheet .foot .btn{flex:1}
@@ -302,9 +312,12 @@ function rangeLabel(a, b) {
 }
 
 /* ---------- constants ---------- */
-const ITEM_TYPES = [['activity', 'Aktivitas'], ['food', 'Makan'], ['transport', 'Transport'], ['stay', 'Penginapan'], ['photo', 'Spot foto'], ['other', 'Lainnya']];
+const ITEM_TYPES = [['activity', 'Aktivitas'], ['food', 'Makan'], ['flight', 'Penerbangan'], ['transport', 'Transport'], ['stay', 'Penginapan'], ['photo', 'Spot foto'], ['other', 'Lainnya']];
 const BOOK_KINDS = [['flight', 'Penerbangan'], ['stay', 'Penginapan'], ['ticket', 'Tiket/aktivitas'], ['transport', 'Transport'], ['food', 'Restoran'], ['other', 'Lainnya']];
 const BOOK_STATUS = [['todo', 'Belum dipesan'], ['booked', 'Sudah dipesan'], ['confirmed', 'Terkonfirmasi']];
+// Aktivitas di Rencana → jenis booking. BOOK_AUTO: jenis yang otomatis dicatat ke Booking saat aktivitas baru dibuat.
+const ITEM_BOOK = { flight: 'flight', stay: 'stay', activity: 'ticket', transport: 'transport', food: 'food', photo: 'ticket', other: 'other' };
+const BOOK_AUTO = ['flight', 'stay', 'activity'];
 const EXP_CATS = [['food', 'Makan'], ['transport', 'Transport'], ['stay', 'Penginapan'], ['activity', 'Aktivitas & tiket'], ['shopping', 'Belanja'], ['other', 'Lainnya']];
 /*
  * Semua negara (kode ISO) → mata uang utama. Nama negara & mata uang dalam Bahasa Indonesia
@@ -423,7 +436,8 @@ function load() {
   return blank();
 }
 /*
- * Trip = satu negara (country) + rentang tanggal. Kota diatur per tanggal di t.days: { '2026-11-17': { city: 'Phu Quoc' } }.
+ * Trip = satu negara (country) + rentang tanggal. Kota diatur per tanggal di t.days: { '2026-11-17': { city: 'Phu Quoc' } },
+ * atau untuk hari pindah kota { city: 'Phu Quoc', from: 'Ho Chi Minh' }; aktivitas di kota asal menyimpan it.at.
  * Trip versi lama menyimpan "Kota, Negara" di t.place; dipecah sekali di sini.
  */
 function migrateTrip(t) {
@@ -439,17 +453,26 @@ function migrateTrip(t) {
   return t;
 }
 const cityOf = (t, d) => (t && d && t.days && t.days[d] && t.days[d].city) || '';
-const ctxOf = (t, d) => [cityOf(t, d), t && (t.country || t.place)].filter(Boolean).join(', ');
+// Hari pindah kota: t.days[d].from = kota asal, city = kota tujuan (tempat menginap malam itu).
+const fromOf = (t, d) => (t && d && t.days && t.days[d] && t.days[d].from) || '';
+const dayCityLabel = (t, d) => (fromOf(t, d) && cityOf(t, d) ? `${fromOf(t, d)} → ${cityOf(t, d)}` : cityOf(t, d));
+const ctxOf = (t, d, at) => [at || cityOf(t, d), t && (t.country || t.place)].filter(Boolean).join(', ');
 function tripCities(t) {
   const out = [];
-  dayRange(t.start, t.end).forEach((d) => { const c = cityOf(t, d); if (c && !out.some((x) => fold(x) === fold(c))) out.push(c); });
+  const add = (c) => { if (c && !out.some((x) => fold(x) === fold(c))) out.push(c); };
+  dayRange(t.start, t.end).forEach((d) => { add(fromOf(t, d)); add(cityOf(t, d)); });
   return out;
 }
 // "Phu Quoc (4) → Hanoi (3)" mengikuti urutan tanggal
 function routeLabel(t) {
   const segs = [];
-  dayRange(t.start, t.end).forEach((d) => { const c = cityOf(t, d) || '?'; const last = segs[segs.length - 1]; if (last && last.c === c) last.n++; else segs.push({ c, n: 1 }); });
-  return segs.some((s) => s.c !== '?') ? segs.map((s) => `${s.c === '?' ? 'belum diatur' : s.c} (${s.n})`).join(' → ') : '';
+  dayRange(t.start, t.end).forEach((d) => {
+    const c = cityOf(t, d) || '?', f = fromOf(t, d);
+    let last = segs[segs.length - 1];
+    if (f && (!last || last.c !== f)) segs.push(last = { c: f, n: 0 }); // kota asal di luar rentang trip
+    if (last && last.c === c) last.n++; else segs.push({ c, n: 1 });
+  });
+  return segs.some((s) => s.c !== '?') ? segs.map((s) => `${s.c === '?' ? 'belum diatur' : s.c}${s.n ? ` (${s.n})` : ''}`).join(' → ') : '';
 }
 let state = load();
 function save(fromRemote) {
@@ -685,30 +708,91 @@ function rateAge(at) {
   const d = new Date(at * 1000);
   return `${d.getDate()} ${MON[d.getMonth()]} ${d.getFullYear()}, ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
-// Ambil kurs terbaru: saat aplikasi dibuka, saat kembali online, dan tiap 3 jam jika data lebih tua dari itu.
-async function refreshRates(force) {
-  const curs = [...new Set(state.trips.map((t) => t.cur || 'VND').concat(trip() ? [trip().cur] : []))].filter((c) => c && c !== 'IDR');
+/* Kurs live dari Coinbase (berubah tiap menit, tanpa key); cadangan ExchangeRate-API (harian).
+   Kurs per tanggal untuk pengeluaran hari yang sudah lewat: fawazahmed0 currency-api (harian, ada arsip per tanggal). */
+const LIVE_MAX_AGE = 15 * 60 * 1000;
+async function fetchLive(cur) {
+  try {
+    const res = await fetch(`https://api.coinbase.com/v2/exchange-rates?currency=${cur}`, { cache: 'no-store' });
+    const v = parseFloat((await res.json()).data.rates.IDR);
+    if (v > 0) return { idr: v, at: Math.floor(Date.now() / 1000), fetched: Date.now(), src: 'Coinbase', live: true };
+  } catch (e) { /* coba cadangan */ }
+  const res = await fetch(`https://open.er-api.com/v6/latest/${cur}`, { cache: 'no-store' });
+  const j = await res.json();
+  if (j.result !== 'success' || !j.rates || !j.rates.IDR) throw new Error('bad');
+  return { idr: j.rates.IDR, at: j.time_last_update_unix, fetched: Date.now(), src: 'ExchangeRate-API', live: false };
+}
+// Ambil kurs terbaru: saat aplikasi dibuka, saat kembali online, tiap 15 menit selama aplikasi terbuka, dan saat tombol Perbarui.
+async function refreshRates(force, only) {
+  const curs = only ? [only] : [...new Set(state.trips.map((t) => t.cur || 'VND').concat(trip() ? [trip().cur] : []))].filter((c) => c && c !== 'IDR');
   if (!curs.length) curs.push('VND');
   let changed = false;
   await Promise.all(curs.map(async (cur) => {
     const old = state.rates[cur];
-    if (!force && old && Date.now() - old.fetched < 3 * 3600 * 1000) return;
+    if (!force && old && old.live && Date.now() - old.fetched < LIVE_MAX_AGE) return;
     rateStatus[cur] = 'loading';
-    try {
-      const res = await fetch(`https://open.er-api.com/v6/latest/${cur}`, { cache: 'no-store' });
-      const j = await res.json();
-      if (j.result !== 'success' || !j.rates || !j.rates.IDR) throw new Error('bad');
-      state.rates[cur] = { idr: j.rates.IDR, at: j.time_last_update_unix, fetched: Date.now() };
-      rateStatus[cur] = 'ok'; changed = true;
-    } catch (e) { rateStatus[cur] = 'fail'; }
+    try { state.rates[cur] = await fetchLive(cur); rateStatus[cur] = 'ok'; changed = true; } catch (e) { rateStatus[cur] = 'fail'; }
   }));
   if (changed) save();
-  render();
+  if (!only) { render(); if (trip()) fixExpenseRates(trip()); }
+}
+const histFail = new Set();
+async function histRate(cur, date) {
+  state.hist = state.hist || {};
+  const k = cur + ':' + date;
+  if (state.hist[k]) return state.hist[k];
+  if (histFail.has(k)) return 0;
+  const c = cur.toLowerCase();
+  for (const url of [`https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${date}/v1/currencies/${c}.json`, `https://${date}.currency-api.pages.dev/v1/currencies/${c}.json`]) {
+    try { const j = await (await fetch(url)).json(); const v = j[c] && j[c].idr; if (v > 0) { state.hist[k] = v; return v; } } catch (e) { /* coba berikutnya */ }
+  }
+  histFail.add(k);
+  return 0;
+}
+/* Setiap pengeluaran mengunci kursnya sendiri:
+   - tunai + kurs isian sendiri (money changer) → kurs itu
+   - tanggal hari ini → kurs live saat dicatat (jam tercatat)
+   - tanggal yang sudah lewat → kurs harian tanggal itu
+   - tanggal yang belum tiba → perkiraan dari kurs sekarang, dikunci ulang saat harinya tiba */
+const expIdr = (e) => (e.cur === 'IDR' ? e.amount : e.rate ? e.amount * e.rate : idr(e.amount, e.cur));
+const rateKeyOf = (e) => [e.amount, e.cur, e.date, e.pay || 'card'].join('|');
+let fixingRates = false;
+async function fixExpenseRates(t) {
+  if (fixingRates || !navigator.onLine) return;
+  fixingRates = true;
+  let changed = false;
+  try {
+    const today = todayStr();
+    for (const e of t.expenses) {
+      if (e.cur === 'IDR') { if (e.rate) { e.rate = e.rateAt = e.rateSrc = e.rateKey = null; changed = true; } continue; }
+      const key = rateKeyOf(e);
+      if (e.rateKey === key && !(e.rateSrc === 'est' && e.date <= today)) continue;
+      let r = null;
+      if (e.pay === 'cash' && state.manual[e.cur]) r = { rate: state.manual[e.cur], rateAt: Math.floor(Date.now() / 1000), rateSrc: 'manual' };
+      else if (e.date && e.date < today) { const v = await histRate(e.cur, e.date); if (v) r = { rate: v, rateAt: null, rateSrc: 'day' }; }
+      else {
+        await refreshRates(false, e.cur);
+        const a = state.rates[e.cur];
+        if (a) r = { rate: a.idr, rateAt: a.at, rateSrc: e.date && e.date > today ? 'est' : a.live ? 'live' : 'daily' };
+      }
+      if (r) { Object.assign(e, r, { rateKey: key }); changed = true; }
+    }
+  } finally { fixingRates = false; }
+  if (changed) { save(); render(); }
+}
+function expRateLine(e) {
+  if (e.cur === 'IDR' || !e.rate) return '';
+  const k = `Kurs Rp${fmtRate(e.rate)}`;
+  if (e.rateSrc === 'manual') return `${k} · money changer (tunai)`;
+  if (e.rateSrc === 'day') return `${k} · kurs harian ${shortDate(e.date)}`;
+  if (e.rateSrc === 'est') return `${k} · perkiraan, dikunci saat ${shortDate(e.date)}`;
+  return `${k} · ${e.rateSrc === 'live' ? 'live' : 'harian'} ${rateAge(e.rateAt)}`;
 }
 function rateLine(cur) {
   const r = rateInfo(cur);
   const st = rateStatus[cur];
-  if (r.source === 'auto') return `Kurs pasar ${rateAge(r.at)} · ExchangeRate-API${st === 'loading' ? ' · memperbarui…' : ''}`;
+  const a = state.rates[cur];
+  if (r.source === 'auto') return `${a && a.live ? 'Kurs live' : 'Kurs harian'} ${rateAge(r.at)} · ${(a && a.src) || 'ExchangeRate-API'}${st === 'loading' ? ' · memperbarui…' : ''}`;
   if (r.source === 'manual') return state.useManual[cur] ? 'Kurs isian sendiri' : 'Kurs isian sendiri (kurs otomatis belum bisa diambil)';
   if (st === 'loading') return 'Mengambil kurs terbaru…';
   return 'Kurs otomatis belum tersedia. Butuh internet, atau isi kurs sendiri di Budget.';
@@ -724,7 +808,7 @@ function newTrip(data) {
 /* ---------- maps links ---------- */
 // Lokasi boleh berupa alamat/nama tempat, atau link yang disalin dari Google Maps (Bagikan → Salin link).
 const isUrl = (s) => /^https?:\/\//i.test(String(s || '').trim());
-const whereOf = (t, x) => (x.day ? ctxOf(t, x.day) : (t && (t.country || t.place)) || x.city || '');
+const whereOf = (t, x) => (x.day ? ctxOf(t, x.day, x.at) : (t && (t.country || t.place)) || x.city || '');
 const mapsQuery = (t, x) => (x.location && !isUrl(x.location) ? x.location : [x.title, whereOf(t, x)].filter(Boolean).join(', '));
 const mapsSearch = (q) => 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q);
 const mapsOpen = (t, x) => (x.g && x.g.uri) || (isUrl(x.location) ? x.location.trim() : mapsSearch(mapsQuery(t, x)));
@@ -838,7 +922,7 @@ function renderPlan(t) {
   const orphan = t.items.filter((i) => !days.includes(i.day));
   const strip = `<div class="strip">${days.map((d, i) => {
     const D = parseD(d); const c = cityOf(t, d);
-    return `<button data-a="jump" data-d="${d}"><span>${WD[D.getUTCDay()]}</span><b>${D.getUTCDate()}</b><span class="stripcity">${esc(c || 'Hari ' + (i + 1))}</span></button>`;
+    return `<button data-a="jump" data-d="${d}"><span>${WD[D.getUTCDay()]}</span><b>${D.getUTCDate()}</b><span class="stripcity">${c && fromOf(t, d) ? '→ ' : ''}${esc(c || 'Hari ' + (i + 1))}</span></button>`;
   }).join('')}</div>`;
   const route = routeLabel(t);
   const unset = days.filter((d) => !cityOf(t, d)).length;
@@ -889,10 +973,82 @@ function renderCheckout(t, x) {
 // Booking penginapan yang sama dengan aktivitas penginapan (nama & tanggal sama) cukup tampil sekali lewat aktivitasnya.
 const stayBookingFor = (t, x) => t.bookings.find((b) => isStayBooking(b) && b.date === x.day && b.dateEnd === x.dayEnd && fold(b.title) === fold(x.title));
 const bookingHasStayItem = (t, b) => t.items.some((x) => isStayItem(x) && x.day === b.date && x.dayEnd === b.dateEnd && fold(x.title) === fold(b.title));
+// Booking yang terhubung ke aktivitas (dibuat otomatis dari Rencana) tampil lewat kartu aktivitasnya saja.
+const linkedBooking = (t, x) => (x.bookingId && t.bookings.find((b) => b.id === x.bookingId)) || (isStayItem(x) ? stayBookingFor(t, x) : null) || null;
+const bookingHidden = (t, b) => (b.itemId && t.items.some((x) => x.id === b.itemId)) || (isStayBooking(b) && bookingHasStayItem(t, b));
+function syncBookingFromItem(t, it, code) {
+  let b = linkedBooking(t, it);
+  if (!b) { b = { id: uid(), status: 'todo', code: '', link: '', note: '' }; t.bookings.push(b); }
+  Object.assign(b, { itemId: it.id, title: it.title, kind: ITEM_BOOK[it.type] || 'other', date: it.day, time: it.time || '', price: it.cost || 0, cur: it.cur,
+    dateEnd: it.dayEnd || null, timeOut: it.timeOut || null, nights: it.nights || null, perNight: it.perNight || null, priceMode: it.priceMode || null });
+  it.bookingId = b.id;
+  if (code !== undefined) { b.code = code; if (code && b.status === 'todo') b.status = 'booked'; }
+  return b;
+}
+// Lepas booking dari aktivitas; booking yang masih kosong (belum dipesan, tanpa kode) ikut dihapus.
+function unlinkBooking(t, it) {
+  const b = it.bookingId && t.bookings.find((x) => x.id === it.bookingId);
+  it.bookingId = null;
+  if (!b) return;
+  if (b.status === 'todo' && !b.code) t.bookings = t.bookings.filter((x) => x.id !== b.id); else b.itemId = null;
+}
+/* Pengeluaran ↔ Rencana ↔ Booking. Pengeluaran menyimpan itemId (aktivitas) atau bookingId (booking tanpa aktivitas);
+   jumlah, mata uang, dan tanggal menginap disamakan ke semua yang terhubung. */
+const ITEM_EXP = { food: 'food', transport: 'transport', flight: 'transport', stay: 'stay', activity: 'activity', photo: 'activity', other: 'other' };
+const EXP_ITEM = { food: 'food', transport: 'transport', stay: 'stay', activity: 'activity', shopping: 'other', other: 'other' };
+const EXP_AUTO = ['food', 'transport', 'stay', 'activity'];
+const itemExpense = (t, x) => t.expenses.find((e) => e.itemId === x.id) || null;
+const bookingExpense = (t, b) => t.expenses.find((e) => e.bookingId === b.id || (b.itemId && e.itemId === b.itemId)) || null;
+const markPaid = (b) => { if (b && b.status === 'todo') b.status = 'booked'; };
+function upsertExpense(t, link, src) {
+  let e = link.itemId ? t.expenses.find((x) => x.itemId === link.itemId) : t.expenses.find((x) => x.bookingId === link.bookingId);
+  if (!e) { e = { id: uid(), title: src.title, category: src.category, date: src.date || todayStr() }; t.expenses.push(e); }
+  Object.assign(e, { itemId: link.itemId || null, bookingId: link.bookingId || null, amount: src.amount, cur: src.cur });
+  if (src.category === 'stay' && src.dateEnd) Object.assign(e, { category: 'stay', date: src.date, dateEnd: src.dateEnd, nights: src.nights, perNight: src.perNight, priceMode: src.priceMode });
+  return e;
+}
+const expFromItem = (x) => ({ title: x.title, amount: x.cost, cur: x.cur, category: ITEM_EXP[x.type] || 'other', date: x.day, dateEnd: x.dayEnd, nights: x.nights, perNight: x.perNight, priceMode: x.priceMode });
+const expFromBooking = (b) => ({ title: b.title, amount: b.price, cur: b.cur, category: b.kind === 'stay' ? 'stay' : b.kind === 'food' ? 'food' : b.kind === 'ticket' ? 'activity' : b.kind === 'other' ? 'other' : 'transport',
+  date: b.date, dateEnd: b.dateEnd, nights: b.nights, perNight: b.perNight, priceMode: b.priceMode });
+// Pengeluaran diubah → biaya aktivitas/booking ikut
+function applyExpense(t, e) {
+  const x = e.itemId && t.items.find((i) => i.id === e.itemId);
+  if (x) {
+    Object.assign(x, { cost: e.amount, cur: e.cur });
+    if (x.type === 'stay' && e.category === 'stay' && e.dateEnd) {
+      const moved = x.day !== e.date;
+      Object.assign(x, { day: e.date, dayEnd: e.dateEnd, nights: e.nights, perNight: e.perNight, priceMode: e.priceMode });
+      if (moved) x.order = insertOrder(t, x.day, x.time, x.id);
+    }
+    if (linkedBooking(t, x)) markPaid(syncBookingFromItem(t, x));
+    return;
+  }
+  const b = e.bookingId && t.bookings.find((i) => i.id === e.bookingId);
+  if (b) { Object.assign(b, { price: e.amount, cur: e.cur }); markPaid(b); }
+}
+// Pengeluaran baru tanpa pasangan → buat aktivitas di Rencana (dan booking bila jenisnya biasa dipesan)
+const unlinkedExpenses = (t) => t.expenses.filter((e) => EXP_AUTO.includes(e.category)
+  && !(e.itemId && t.items.some((x) => x.id === e.itemId)) && !(e.bookingId && t.bookings.some((b) => b.id === e.bookingId)));
+function itemFromExpense(t, e) {
+  const days = dayRange(t.start, t.end);
+  const day = days.includes(e.date) ? e.date : t.start;
+  let x = t.items.find((i) => i.day === day && fold(i.title) === fold(e.title));
+  if (!x) {
+    x = { id: uid(), done: false, title: e.title, type: EXP_ITEM[e.category] || 'other', day, time: '', location: '', note: '', cost: e.amount, cur: e.cur, g: null,
+      dayEnd: null, timeOut: null, nights: null, perNight: null, priceMode: null, at: null };
+    if (x.type === 'stay' && e.dateEnd) Object.assign(x, { day: e.date, dayEnd: e.dateEnd, time: STAY_IN, timeOut: STAY_OUT, nights: e.nights, perNight: e.perNight, priceMode: e.priceMode });
+    x.order = insertOrder(t, x.day, x.time);
+    t.items.push(x);
+    if (BOOK_AUTO.includes(x.type)) syncBookingFromItem(t, x);
+  }
+  e.itemId = x.id; e.bookingId = null;
+  applyExpense(t, e);
+  return x;
+}
 
 function renderDay(t, d, i) {
   const items = sortItems(t.items.filter((x) => x.day === d));
-  const resv = t.bookings.filter((b) => (b.date === d || (isStayBooking(b) && b.date < d && d <= b.dateEnd)) && !(isStayBooking(b) && bookingHasStayItem(t, b)));
+  const resv = t.bookings.filter((b) => (b.date === d || (isStayBooking(b) && b.date < d && d <= b.dateEnd)) && !bookingHidden(t, b));
   // penginapan: check-out otomatis di hari keluar (disisipkan sesuai jam), dan keterangan malam di antaranya
   const outs = t.items.filter((x) => isStayItem(x) && x.dayEnd === d);
   const nights = t.items.filter((x) => isStayItem(x) && x.day < d && d < x.dayEnd);
@@ -908,7 +1064,7 @@ function renderDay(t, d, i) {
   return `<section class="day" id="day-${d}">
     <div class="dayhead">
       <div class="d"><div class="k">Hari ${i + 1}</div><h2>${dayLabel(d)}</h2>
-        <button class="citybtn ${cityOf(t, d) ? '' : 'unset'}" data-a="setCity" data-d="${d}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-12a7 7 0 0 1 14 0c0 5.8-7 12-7 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="9" r="2.5" fill="currentColor"/></svg>${cityOf(t, d) ? esc(cityOf(t, d)) : 'Atur kota'}</button>
+        <button class="citybtn ${cityOf(t, d) ? '' : 'unset'}" data-a="setCity" data-d="${d}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-12a7 7 0 0 1 14 0c0 5.8-7 12-7 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="9" r="2.5" fill="currentColor"/></svg>${cityOf(t, d) ? esc(dayCityLabel(t, d)) : 'Atur kota'}</button>
         <div class="m num">${items.length} aktivitas${cost ? ` · ±Rp${fmtN(cost)}` : ''}</div></div>
       <div class="row">
         ${route ? `<a class="btn ghost small" href="${esc(route)}" target="_blank" rel="noopener">Rute</a>` : ''}
@@ -927,12 +1083,16 @@ function renderItem(t, it, orphan) {
     <div class="time">${esc(it.time || '')}</div>
     <div class="body">
       <div class="itcard" data-a="editItem" data-id="${it.id}" role="button" tabindex="0">
-        <span class="pill t-${it.type}">${isStayItem(it) ? 'Check-in' : esc(label(ITEM_TYPES, it.type))}</span>${orphan ? ` <span class="muted" style="font-size:12px">${shortDate(it.day)}</span>` : ''}
+        <span class="pill t-${it.type}">${isStayItem(it) ? 'Check-in' : esc(label(ITEM_TYPES, it.type))}</span>${!orphan && !isStayItem(it) && fromOf(t, it.day) ? ` <span class="muted" style="font-size:12px">di ${esc(it.at || cityOf(t, it.day))}</span>` : ''}${orphan ? ` <span class="muted" style="font-size:12px">${shortDate(it.day)}</span>` : ''}
         <div class="title">${esc(it.title)}</div>
         ${isStayItem(it) ? `<div class="staymeta num">${stayLine(it.day, it.dayEnd, it.timeOut || STAY_OUT)}</div>` : ''}
-        ${isStayItem(it) && stayBookingFor(t, it) ? (() => { const b = stayBookingFor(t, it); return `<div class="row" style="gap:6px;margin-top:4px"><span class="pill s-${b.status}">Booking: ${esc(label(BOOK_STATUS, b.status))}</span>${b.code ? `<span class="code">${esc(b.code)}</span>` : ''}</div>`; })() : ''}
+        ${itemExpense(t, it) ? `<div class="row" style="gap:6px;margin-top:4px"><span class="pill s-confirmed">Sudah dibayar</span></div>` : ''}
+        ${(() => { const b = linkedBooking(t, it); if (!b) return '';
+          return `<div class="row" style="gap:6px;margin-top:4px"><button type="button" class="pill s-${b.status}" data-a="editBooking" data-id="${b.id}">Booking: ${esc(label(BOOK_STATUS, b.status))}</button>${b.code
+            ? `<span class="code">${esc(b.code)}</span>` : `<button type="button" class="linkbtn" data-a="editBooking" data-id="${b.id}">+ Isi kode booking</button>`}</div>`; })()}
         ${it.location ? `<div class="loc">${isUrl(it.location) ? 'Link Google Maps tersimpan' : esc(it.location)}</div>` : ''}
         ${stars(it)}
+        ${recBadges(it, 2)}
         ${it.note ? `<div class="note">${esc(it.note)}</div>` : ''}
         ${it.cost ? `<div class="cost num">${esc(moneyBoth(it.cost, it.cur))}${isStayItem(it) && it.perNight ? ` · ${esc(money(it.perNight, it.cur))}/malam` : ''}</div>` : ''}
       </div>
@@ -950,21 +1110,30 @@ function renderItem(t, it, orphan) {
 
 let exploreQuery = '';
 function renderPlaces(t) {
-  const saved = [...t.places].sort((a, b) => ratingValue(b) - ratingValue(a));
+  const withRecs = t.places.filter((p) => (p.recs || []).length);
+  const onlyRecs = state.placeFilter === 'recs' && withRecs.length;
+  const saved = (onlyRecs ? withRecs : [...t.places]).sort((a, b) => (onlyRecs ? (b.recs.length - a.recs.length) : 0) || ratingValue(b) - ratingValue(a));
   const missing = placesEnabled() ? t.places.concat(t.items).filter((x) => !x.g && x.type !== 'transport').length : 0;
   return `<div class="section-h"><h2>Tempat simpanan</h2><span class="muted num">${t.places.length}</span></div>
+    <div class="row" style="gap:8px;margin-bottom:10px;flex-wrap:wrap">
+      <button class="chip" data-a="placeFilter" data-k="all" aria-pressed="${!onlyRecs}">Semua</button>
+      <button class="chip" data-a="placeFilter" data-k="recs" aria-pressed="${!!onlyRecs}" ${withRecs.length ? '' : 'disabled'}>Dari influencer/sosmed · ${withRecs.length}</button>
+      <button class="btn ghost small" data-a="addSocialPlace" style="margin-left:auto">+ Dari link sosmed</button>
+    </div>
     ${saved.length ? `<div class="card">${saved.map((p) => `
       <div class="li"><div class="main">
         <div class="row" style="gap:6px"><span class="pill t-${p.type}">${esc(label(ITEM_TYPES, p.type))}</span>${stars(p)}</div>
         <div class="title" data-a="editPlace" data-id="${p.id}" role="button" tabindex="0" style="cursor:pointer;margin-top:4px">${esc(p.title)}</div>
         ${p.location ? `<div class="sub">${isUrl(p.location) ? 'Link Google Maps tersimpan' : esc(p.location)}</div>` : ''}
+        ${recBadges(p)}
         ${p.note ? `<div class="sub">${esc(p.note)}</div>` : ''}
         <div class="acts"><button data-a="schedulePlace" data-id="${p.id}">Jadwalkan</button>
           <a class="go" href="${esc(mapsNav(t, p))}" target="_blank" rel="noopener">Navigasi</a>
           <a href="${esc(mapsOpen(t, p))}" target="_blank" rel="noopener">Maps</a>
-          <button data-a="reviews" data-kind="places" data-id="${p.id}">Review</button></div>
+          <button data-a="reviews" data-kind="places" data-id="${p.id}">Review</button>
+          <button data-a="addRec" data-kind="places" data-id="${p.id}">+ Rekomendasi</button></div>
       </div></div>`).join('')}</div>`
-      : `<div class="empty">Belum ada. Simpan dari daftar di bawah atau tekan "+ Tempat". Tempat diurutkan dari rating tertinggi.</div>`}
+      : `<div class="empty">Belum ada. Simpan dari daftar di bawah, tekan "+ Tempat", atau tempel link video influencer lewat "+ Dari link sosmed".</div>`}
     ${missing ? `<button class="btn ghost small block" style="margin-top:10px" data-a="fillRatings">Ambil rating Google untuk ${missing} tempat & aktivitas</button>` : ''}
     ${placesEnabled() ? '' : `<button class="btn ghost small block" style="margin-top:10px" data-a="setupHelp" data-k="places">Aktifkan rating Google otomatis</button>`}
 
@@ -1024,6 +1193,8 @@ function renderExplore(t) {
     <div class="f" style="margin:10px 0 8px"><label for="exploreSearch" class="sr-only">Cari tempat</label>
       <input id="exploreSearch" type="search" data-explore value="${esc(exploreQuery)}" placeholder="Saring daftar di ${esc(city)}…" autocomplete="off"></div>
     <a class="btn ghost small block maplink" href="${esc(mapsSearch(`${searchWhat} ${city}, ${country}`))}" target="_blank" rel="noopener">Cari "${esc(searchWhat)}" di ${esc(city)} lewat Google Maps →</a>
+    <div class="row" style="gap:6px;margin-top:8px;align-items:center"><span class="muted" style="font-size:12.5px">Rekomendasi influencer:</span>
+      ${socialLinks(`${exploreQuery.trim() || (mode === 'kuliner' ? 'kuliner' : 'wisata')} ${city}`).map(([l, u]) => `<a class="btn ghost small" style="text-decoration:none" href="${esc(u)}" target="_blank" rel="noopener">${l}</a>`).join('')}</div>
     <div class="card" style="margin-top:10px">${body || '<div class="li"><div class="main muted">Tidak ada yang cocok.</div></div>'}</div>`;
 }
 function exploreRow({ title, type, note, g, maps, rl, save }) {
@@ -1140,12 +1311,12 @@ function renderBookings(t) {
     <div class="section-h"><h2>Reservasi</h2></div>
     ${list.length ? `<div class="card">${list.map((b) => `
       <div class="li"><div class="main">
-        <div class="row" style="gap:6px"><span class="pill s-${b.status}">${esc(label(BOOK_STATUS, b.status))}</span><span class="muted" style="font-size:12.5px">${esc(label(BOOK_KINDS, b.kind))}</span></div>
+        <div class="row" style="gap:6px"><span class="pill s-${b.status}">${esc(label(BOOK_STATUS, b.status))}</span><span class="muted" style="font-size:12.5px">${esc(label(BOOK_KINDS, b.kind))}${b.itemId && t.items.some((x) => x.id === b.itemId) ? ' · dari Rencana' : ''}${bookingExpense(t, b) ? ' · sudah dibayar' : ''}</span></div>
         <div class="title" data-a="editBooking" data-id="${b.id}" role="button" tabindex="0" style="cursor:pointer;margin-top:4px">${esc(b.title)}</div>
         <div class="sub num">${isStayBooking(b) ? `${stayLine(b.date, b.dateEnd)} · check-in ${esc(b.time || STAY_IN)}, check-out ${esc(b.timeOut || STAY_OUT)}` : `${b.date ? dayLabel(b.date) : 'Tanpa tanggal'}${b.time ? ' · ' + esc(b.time) : ''}`}${b.price ? ' · ' + esc(moneyBoth(b.price, b.cur)) : ''}${isStayBooking(b) && b.perNight ? ` (${esc(money(b.perNight, b.cur))}/malam)` : ''}</div>
         ${b.note ? `<div class="sub">${esc(b.note)}</div>` : ''}
         <div class="acts">
-          ${b.code ? `<button data-a="copy" data-text="${esc(b.code)}">Kode: <span class="code">${esc(b.code)}</span></button>` : ''}
+          ${b.code ? `<button data-a="copy" data-text="${esc(b.code)}">Kode: <span class="code">${esc(b.code)}</span></button>` : `<button data-a="editBooking" data-id="${b.id}">+ Isi kode</button>`}
           ${b.link ? `<a href="${esc(b.link)}" target="_blank" rel="noopener">Buka situs</a>` : ''}
           <button data-a="cycleStatus" data-id="${b.id}">Ubah status</button>
           <button data-a="editBooking" data-id="${b.id}">Ubah</button>
@@ -1155,10 +1326,10 @@ function renderBookings(t) {
 }
 
 function renderBudget(t) {
-  const spent = t.expenses.reduce((s, e) => s + idr(e.amount, e.cur), 0);
-  const planned = t.items.reduce((s, x) => s + (x.cost ? idr(x.cost, x.cur) : 0), 0) + t.bookings.reduce((s, b) => s + (b.price ? idr(b.price, b.cur) : 0), 0);
+  const spent = t.expenses.reduce((s, e) => s + expIdr(e), 0);
+  const planned = t.items.filter((x) => !linkedBooking(t, x)).reduce((s, x) => s + (x.cost ? idr(x.cost, x.cur) : 0), 0) + t.bookings.reduce((s, b) => s + (b.price ? idr(b.price, b.cur) : 0), 0);
   const pct = t.budgetIdr ? Math.min(100, (spent / t.budgetIdr) * 100) : 0;
-  const byCat = EXP_CATS.map(([k, l]) => [l, t.expenses.filter((e) => e.category === k).reduce((s, e) => s + idr(e.amount, e.cur), 0)]).filter((x) => x[1] > 0).sort((a, b) => b[1] - a[1]);
+  const byCat = EXP_CATS.map(([k, l]) => [l, t.expenses.filter((e) => e.category === k).reduce((s, e) => s + expIdr(e), 0)]).filter((x) => x[1] > 0).sort((a, b) => b[1] - a[1]);
   const max = byCat.length ? byCat[0][1] : 1;
   const list = [...t.expenses].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   return `<div class="card" style="padding:16px;margin-top:6px">
@@ -1177,11 +1348,17 @@ function renderBudget(t) {
       <div style="margin-bottom:10px"><div class="row" style="justify-content:space-between;font-size:13.5px"><span>${esc(l)}</span><b class="num">Rp${fmtN(v)}</b></div>
       <div class="bar"><i style="width:${(v / max) * 100}%"></i></div></div>`).join('')}</div>` : ''}
     <div class="section-h"><h2>Pengeluaran</h2><span class="muted num">${t.expenses.length}</span></div>
+    ${unlinkedExpenses(t).length ? `<div class="card" style="padding:12px 14px;margin-bottom:10px"><div style="font-size:13.5px">${unlinkedExpenses(t).length} pengeluaran belum masuk Rencana.</div>
+      <p class="muted" style="font-size:12.5px;margin:4px 0 10px">Yang namanya sama dengan aktivitas di tanggal itu langsung disambungkan; sisanya dibuatkan aktivitas baru (penginapan dan tiket sekalian masuk Booking).</p>
+      <button class="btn small" data-a="linkExpenses">Hubungkan ke Rencana & Booking</button></div>` : ''}
     ${list.length ? `<div class="card">${list.map((e) => `
       <div class="li" data-a="editExpense" data-id="${e.id}" role="button" tabindex="0" style="cursor:pointer"><div class="main">
         <div class="title">${esc(e.title)}</div>
-        <div class="sub">${esc(label(EXP_CATS, e.category))}${e.category === 'stay' && e.dateEnd ? ' · ' + stayLine(e.date, e.dateEnd) : e.date ? ' · ' + shortDate(e.date) : ''}</div></div>
-        <div style="text-align:right"><b class="num">${esc(money(e.amount, e.cur))}</b>${e.cur !== 'IDR' && rateOf(e.cur) ? `<div class="sub num">±Rp${fmtN(idr(e.amount, e.cur))}</div>` : ''}${e.category === 'stay' && e.perNight && e.nights ? `<div class="sub num">${esc(money(e.perNight, e.cur))}/malam</div>` : ''}</div>
+        <div class="sub">${esc(label(EXP_CATS, e.category))}${e.category === 'stay' && e.dateEnd ? ' · ' + stayLine(e.date, e.dateEnd) : e.date ? ' · ' + shortDate(e.date) : ''}${(() => {
+          const x = e.itemId && t.items.find((i) => i.id === e.itemId); if (x) return ` · di Rencana ${shortDate(x.day)}${linkedBooking(t, x) ? ' & Booking' : ''}`;
+          return e.bookingId && t.bookings.some((b) => b.id === e.bookingId) ? ' · di Booking' : ''; })()}</div>
+        ${e.cur !== 'IDR' ? `<div class="sub num" style="font-size:12px">${e.pay === 'cash' ? 'Tunai' : 'Cashless'}${expRateLine(e) ? ' · ' + esc(expRateLine(e)) : ' · kurs belum terkunci'}</div>` : ''}</div>
+        <div style="text-align:right"><b class="num">${esc(money(e.amount, e.cur))}</b>${e.cur !== 'IDR' && (e.rate || rateOf(e.cur)) ? `<div class="sub num">±Rp${fmtN(expIdr(e))}</div>` : ''}${e.category === 'stay' && e.perNight && e.nights ? `<div class="sub num">${esc(money(e.perNight, e.cur))}/malam</div>` : ''}</div>
       </div>`).join('')}</div>`
       : `<div class="empty">Catat setiap pengeluaran dalam VND atau IDR. Totalnya otomatis dikonversi ke rupiah.</div>`}`;
 }
@@ -1200,7 +1377,7 @@ function renderRateCard(t, withCalc) {
     ${withCalc ? `<div class="f2" style="margin-top:12px"><div class="f"><label for="cvLocal">${esc(t.cur)}</label><input id="cvLocal" type="text" inputmode="decimal" autocomplete="off" placeholder="100.000" data-conv="local" data-num="2"></div>
       <div class="f"><label for="cvIdr">IDR</label><input id="cvIdr" type="text" inputmode="decimal" autocomplete="off" placeholder="0" data-conv="idr" data-num="0"></div></div>` : ''}
     ${r && t.cur !== 'IDR' ? `<div class="ratetbl num">${quick.filter((n) => n >= 1).map((n) => `<span>${esc(money(n, t.cur))}</span><b>Rp${fmtN(n * r)}</b>`).join('')}</div>` : ''}
-    <div class="muted" style="font-size:12px;margin-top:8px">Kurs tengah pasar, diperbarui harian. Money changer dan kartu biasanya sedikit lebih mahal.</div>
+    <div class="muted" style="font-size:12px;margin-top:8px">Kurs tengah pasar live, diperbarui otomatis tiap 15 menit. Setiap pengeluaran memakai kurs pada hari/jam dicatat. Money changer dan kartu biasanya sedikit lebih mahal.</div>
   </div>`;
 }
 
@@ -1277,8 +1454,8 @@ function field(f) {
   }
   else if (f.type === 'citypick') {
     input = `<input type="hidden" name="${f.name}" id="${id}" value="${esc(v)}">
-      <button type="button" class="picker" id="${id}-btn" data-a="pickCity" aria-haspopup="dialog">
-        <span class="${v ? '' : 'muted'}">${esc(v || 'Pilih kota')}</span>
+      <button type="button" class="picker" id="${id}-btn" data-a="pickCity" data-t="${f.name}" data-empty="${esc(f.empty || 'Pilih kota')}" aria-haspopup="dialog">
+        <span class="${v ? '' : 'muted'}">${esc(v || f.empty || 'Pilih kota')}</span>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>`;
     return `<div class="f"><label for="${id}-btn">${esc(f.label)}</label>${input}</div>`;
@@ -1329,7 +1506,7 @@ document.addEventListener('submit', (e) => {
   for (const [k, val] of fd.entries()) v[k] = typeof val === 'string' ? val.trim() : val;
   const req = e.target.querySelector('[required]');
   if (req && !req.value.trim()) { req.focus(); toast('Isi ' + (req.labels && req.labels[0] ? req.labels[0].textContent : 'kolom wajib')); return; }
-  if (sheetSubmit && sheetSubmit(v) !== false) { closeSheet(); save(); render(); }
+  if (sheetSubmit && sheetSubmit(v) !== false) { closeSheet(); save(); render(); if (trip()) fixExpenseRates(trip()); }
 });
 
 let toastTimer;
@@ -1432,6 +1609,7 @@ document.addEventListener('paste', (e) => {
 document.addEventListener('change', (e) => {
   if (e.target.matches && e.target.matches('[data-moneycur]')) { const inp = document.getElementById(e.target.dataset.moneycur); if (inp) refreshMoneyHint(inp); }
   if (e.target.form && e.target.form.id === 'sheetForm' && e.target.tagName === 'SELECT') applyWhen(e.target.form);
+  if (e.target.id === 'f-day' && $('#f-at') && trip()) syncAtField(trip());
 });
 function readG(v) { try { return v.gplace ? JSON.parse(v.gplace) : null; } catch (e) { return null; } }
 function placeChosen(g) {
@@ -1450,7 +1628,7 @@ async function runPlaceSearch(immediate) {
   try {
     const t = trip();
     const dayEl = $('#f-day'); // form aktivitas: cari di kota hari itu; form tempat: di negara tujuan
-    const res = await searchPlaces(withPlace(q, t ? (dayEl ? ctxOf(t, dayEl.value) : (t.country || t.place)) : ''));
+    const res = await searchPlaces(withPlace(q, t ? (dayEl ? ctxOf(t, dayEl.value, $('#f-at') && $('#f-at').value) : (t.country || t.place)) : ''));
     if (seq !== placeSeq) return;
     box.innerHTML = res.length ? res.map((g, i) => `<button type="button" class="presult" data-a="placePick" data-i="${i}">
         <b>${esc(g.name)}</b><span class="sub">${esc(g.address)}</span>${g.rating ? `<span class="star num">${gRating(g)}</span>` : ''}</button>`).join('')
@@ -1465,6 +1643,96 @@ function readRatings(v) {
   PLATFORMS.forEach(([k]) => { const n = num(v['r_' + k]); if (n) r[k] = Math.min(5, Math.round(n * 10) / 10); });
   return r;
 }
+/* Rekomendasi influencer/sosmed: x.recs = [{ id, src, by, url, note }] pada tempat (dan aktivitas yang dijadwalkan dari tempat). */
+const REC_SRC = [['tiktok', 'TikTok'], ['instagram', 'Instagram'], ['youtube', 'YouTube'], ['facebook', 'Facebook'], ['x', 'X'], ['other', 'Lainnya']];
+function recSrcOf(url) {
+  const h = (() => { try { return new URL(url).hostname.replace(/^www\.|^m\./, ''); } catch (e) { return ''; } })();
+  if (/tiktok\.com$/.test(h)) return 'tiktok';
+  if (/instagram\.com$/.test(h)) return 'instagram';
+  if (/youtube\.com$|youtu\.be$/.test(h)) return 'youtube';
+  if (/facebook\.com$|fb\.watch$/.test(h)) return 'facebook';
+  if (/^(x|twitter)\.com$/.test(h)) return 'x';
+  return 'other';
+}
+// Nama akun yang terbaca dari link: tiktok.com/@akun/…, instagram.com/akun/, youtube.com/@akun
+function recByFromUrl(url) {
+  try {
+    const u = new URL(url), p = u.pathname.split('/').filter(Boolean);
+    const at = p.find((s) => s.startsWith('@'));
+    if (at) return at;
+    if (/instagram\.com$/.test(u.hostname.replace(/^www\./, '')) && p[0] && !['p', 'reel', 'reels', 'stories', 'explore', 'tv'].includes(p[0])) return '@' + p[0];
+  } catch (e) { /* bukan link */ }
+  return '';
+}
+// YouTube mengizinkan membaca judul & nama channel (oEmbed); TikTok/Instagram tidak.
+async function recMeta(url) {
+  if (recSrcOf(url) !== 'youtube') return null;
+  try { const j = await (await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`)).json(); return { by: j.author_name || '', title: j.title || '' }; } catch (e) { return null; }
+}
+const normUrl = (s) => { s = (s || '').trim(); return s && !/^https?:\/\//i.test(s) ? 'https://' + s : s; };
+function recBadges(x, max) {
+  const recs = x.recs || []; if (!recs.length) return '';
+  const shown = recs.slice(0, max || 3);
+  return `<div class="recs">${shown.map((r) => `<a class="recb rec-${r.src}" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(label(REC_SRC, r.src))}${r.by ? ' · ' + esc(r.by) : ''}</a>`).join('')}${recs.length > shown.length ? `<span class="muted" style="font-size:12px">+${recs.length - shown.length}</span>` : ''}</div>`;
+}
+// Isian link sosmed di form: saat link ditempel, sumber & nama akun (dan judul YouTube) terisi sendiri.
+function wireRecUrl() {
+  const u = $('#f-recUrl'); if (!u) return;
+  const fill = async () => {
+    const url = normUrl(u.value); if (!url) return;
+    const by = $('#f-recBy'), note = $('#f-recNote');
+    if (by && !by.value) by.value = recByFromUrl(url);
+    const m = await recMeta(url);
+    if (m && by && !by.value) by.value = m.by;
+    if (m && note && !note.value) note.value = m.title;
+  };
+  u.addEventListener('change', fill); u.addEventListener('paste', () => setTimeout(fill, 0));
+}
+function recForm(t, kind, x) {
+  openForm({
+    title: `Rekomendasi: ${x.title}`, submit: 'Simpan rekomendasi',
+    fields: [
+      { name: 'recUrl', label: 'Link video / postingan (TikTok, Instagram, YouTube…)', type: 'url', placeholder: 'https://www.tiktok.com/@akun/video/…', required: true },
+      { name: 'recBy', label: 'Influencer / akun', placeholder: '@namaakun' },
+      { name: 'recNote', label: 'Catatan (menu andalan, harga, tips)', type: 'textarea' },
+    ],
+    onSubmit(v) {
+      const url = normUrl(v.recUrl);
+      x.recs = (x.recs || []).concat([{ id: uid(), src: recSrcOf(url), by: v.recBy, url, note: v.recNote }]);
+      toast('Rekomendasi tersimpan');
+    },
+  });
+  wireRecUrl();
+}
+// Simpan tempat baru langsung dari link sosmed
+function socialPlaceForm(t) {
+  openForm({
+    title: 'Tempat dari sosmed / influencer', submit: 'Simpan tempat',
+    fields: [
+      { name: 'recUrl', label: 'Link video / postingan', type: 'url', placeholder: 'Tempel link TikTok, Instagram, YouTube…', required: true },
+      { name: 'recBy', label: 'Influencer / akun', placeholder: '@namaakun', half: true },
+      { name: 'type', label: 'Jenis', type: 'select', options: ITEM_TYPES, value: 'food', half: true },
+      { name: 'title', label: 'Nama tempat yang direkomendasikan', placeholder: 'Bun Cha Huong Lien', required: true },
+      { name: 'location', label: 'Lokasi', type: 'place', placeholder: 'Nama tempat untuk dicari di Google', hint: true },
+      { name: 'recNote', label: 'Catatan (menu andalan, harga, tips)', type: 'textarea' },
+    ],
+    onSubmit(v) {
+      const url = normUrl(v.recUrl);
+      const rec = { id: uid(), src: recSrcOf(url), by: v.recBy, url, note: v.recNote };
+      const same = t.places.find((p) => fold(p.title) === fold(v.title));
+      if (same) { same.recs = (same.recs || []).concat([rec]); toast('Ditambahkan ke tempat yang sudah ada'); }
+      else t.places.push({ id: uid(), title: v.title, type: v.type, location: v.location, note: '', g: readG(v), recs: [rec] });
+      state.placeFilter = 'recs';
+    },
+  });
+  wireRecUrl();
+}
+// Pencarian rekomendasi influencer di sosial media (dibuka di aplikasinya kalau terpasang di HP).
+const socialLinks = (q) => [
+  ['TikTok', `https://www.tiktok.com/search?q=${encodeURIComponent(q)}`],
+  ['Instagram', `https://www.instagram.com/explore/search/keyword/?q=${encodeURIComponent(q)}`],
+  ['YouTube', `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`],
+];
 function reviewSheet(t, kind, x) {
   const links = reviewLinks(t, x);
   const g = x.g;
@@ -1481,6 +1749,15 @@ function reviewSheet(t, kind, x) {
     <div class="card">${PLATFORMS.filter(([k]) => k !== 'google').map(([k, l]) => `<div class="li"><div class="main"><div class="title">${l}</div>
       <div class="sub">Rating dan harga paket di situsnya</div></div>
       <a class="btn ghost small" href="${esc(links[k])}" target="_blank" rel="noopener">Buka</a></div>`).join('')}</div>
+    <div class="row" style="justify-content:space-between;margin:16px 0 6px"><span class="muted" style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase">Rekomendasi influencer & sosmed</span>
+      <button class="btn ghost small" data-a="addRec" data-kind="${kind}" data-id="${x.id}">+ Tambah</button></div>
+    ${(x.recs || []).length ? `<div class="card" style="margin-bottom:8px">${x.recs.map((r) => `<div class="li"><div class="main">
+      <div class="title">${esc(label(REC_SRC, r.src))}${r.by ? ' · ' + esc(r.by) : ''}</div>${r.note ? `<div class="sub">${esc(r.note)}</div>` : ''}</div>
+      <div class="row" style="gap:6px"><a class="btn small" href="${esc(r.url)}" target="_blank" rel="noopener">Lihat</a>
+      <button class="btn ghost small" data-a="delRec" data-kind="${kind}" data-id="${x.id}" data-r="${r.id}" data-confirm aria-label="Hapus rekomendasi">Hapus</button></div></div>`).join('')}</div>` : ''}
+    <div class="card">${socialLinks(`${x.title} ${(x.day && cityOf(t, x.day)) || t.country || ''}`.trim()).map(([l, u]) => `<div class="li"><div class="main"><div class="title">${l}</div>
+      <div class="sub">Video dan ulasan tentang ${esc(x.title)}</div></div>
+      <a class="btn ghost small" href="${esc(u)}" target="_blank" rel="noopener">Buka</a></div>`).join('')}</div>
     <div class="foot" style="margin-top:14px"><button class="btn" data-a="closeSheet">Tutup</button></div>`);
 }
 const dayOptions = (t) => dayRange(t.start, t.end).map((d, i) => [d, `Hari ${i + 1} · ${dayLabel(d)}`]);
@@ -1670,7 +1947,7 @@ function chooseCountry(code) {
 }
 
 /* ---------- pemilih kota: daftar bawaan per negara + pencarian Google + ketik bebas ---------- */
-let cityPickerTrip = null, citySearchTimer = null, citySeq = 0;
+let cityPickerTrip = null, citySearchTimer = null, citySeq = 0, cityTarget = 'city';
 const cityCache = new Map();
 async function searchCities(query, country) {
   const c = findCountry(country);
@@ -1692,10 +1969,12 @@ function cityRowsHtml(t, query) {
   const base = citiesOf(t.country);
   const used = tripCities(t);
   const pool = [...new Set(used.concat(catalogCitiesFor(t.country), base))];
-  const cur = fold($('#f-city') ? $('#f-city').value : '');
+  const cur = fold($('#f-' + cityTarget) ? $('#f-' + cityTarget).value : '');
   const row = (name, sub) => `<button type="button" class="prow ${fold(name) === cur ? 'on' : ''}" data-a="cityChosen" data-v="${esc(name)}"><span>${esc(name)}${sub ? `<small>${esc(sub)}</small>` : ''}</span>${used.some((u) => fold(u) === fold(name)) ? '<b>di rute</b>' : ''}</button>`;
   let html = '';
-  if (cur && !f) html += `<button type="button" class="prow" data-a="cityChosen" data-v=""><span>Kosongkan kota<small>Hari ini belum ditentukan</small></span></button>`;
+  if (cur && !f) html += cityTarget === 'from'
+    ? `<button type="button" class="prow" data-a="cityChosen" data-v=""><span>Tidak pindah kota<small>Seharian di kota yang sama</small></span></button>`
+    : `<button type="button" class="prow" data-a="cityChosen" data-v=""><span>Kosongkan kota<small>Hari ini belum ditentukan</small></span></button>`;
   if (f) {
     const hits = pool.filter((n) => fold(n).includes(f));
     html += hits.map((n) => row(n)).join('');
@@ -1714,7 +1993,7 @@ function openCityPicker() {
   const t = cityPickerTrip || trip(); if (!t) return;
   pickerRoot.innerHTML = `<div class="scrim pscrim" data-a="pickerScrim"><div class="sheet psheet" role="dialog" aria-modal="true" aria-label="Pilih kota">
     <div class="grab"></div>
-    <div class="row" style="justify-content:space-between;margin-bottom:10px"><h2 style="margin:0">Kota di ${esc(t.country || 'negara tujuan')}</h2><button type="button" class="btn ghost small" data-a="pickerClose">Tutup</button></div>
+    <div class="row" style="justify-content:space-between;margin-bottom:10px"><h2 style="margin:0">${cityTarget === 'from' ? 'Berangkat dari kota' : `Kota di ${esc(t.country || 'negara tujuan')}`}</h2><button type="button" class="btn ghost small" data-a="pickerClose">Tutup</button></div>
     <div class="f" style="margin-bottom:8px"><label for="citySearch" class="sr-only">Cari kota</label>
       <input id="citySearch" type="search" autocomplete="off" placeholder="Cari atau ketik nama kota…"></div>
     <div class="plist" id="cityList">${cityRowsHtml(t, '')}</div>
@@ -1741,9 +2020,9 @@ function openCityPicker() {
   if (!('ontouchstart' in window)) s.focus();
 }
 function chooseCity(name) {
-  const inp = $('#f-city'), btn = $('#f-city-btn');
+  const inp = $('#f-' + cityTarget), btn = $('#f-' + cityTarget + '-btn');
   if (inp) inp.value = name;
-  if (btn) { const span = btn.querySelector('span'); span.textContent = name || 'Pilih kota'; span.className = name ? '' : 'muted'; }
+  if (btn) { const span = btn.querySelector('span'); span.textContent = name || btn.dataset.empty || 'Pilih kota'; span.className = name ? '' : 'muted'; }
   closeCountryPicker();
   if (btn) btn.focus();
 }
@@ -1766,14 +2045,18 @@ function cityForm(t, day) {
       { name: 'city', label: `Kota di ${t.country || 'negara tujuan'}`, type: 'citypick', value: cur },
       { name: 'until', label: 'Berlaku sampai', type: 'select', value: days[to],
         options: days.slice(from).map((d, i) => [d, `${i === 0 ? 'Hari ini saja' : 'Sampai'} · Hari ${from + i + 1}, ${dayLabel(d)}`]) },
+      { name: 'from', label: `Pindah kota di ${dayLabel(day)}? Berangkat dari`, type: 'citypick', value: fromOf(t, day), empty: 'Tidak pindah kota' },
     ],
     onSubmit(v) {
-      const city = v.city.trim().replace(/\s+/g, ' ');
-      const known = suggestions.find((s) => fold(s) === fold(city));
+      const clean = (s) => { s = (s || '').trim().replace(/\s+/g, ' '); return suggestions.find((x) => fold(x) === fold(s)) || s; };
+      const city = clean(v.city), origin = clean(v.from);
+      if (origin && !city) { toast('Pilih dulu kota tujuannya'); $('#f-city-btn').click(); return false; }
       const end = days.indexOf(v.until);
       t.days = Object.assign({}, t.days);
-      for (let i = from; i <= end; i++) { if (city) t.days[days[i]] = { city: known || city }; else delete t.days[days[i]]; }
-      if (city) { state.placeCity = known || city; toast(`${known || city}: ${end - from + 1} hari`); }
+      for (let i = from; i <= end; i++) { if (city) t.days[days[i]] = { city }; else delete t.days[days[i]]; }
+      // kota asal hanya untuk hari pertama (hari perjalanan)
+      if (city && origin && fold(origin) !== fold(city)) t.days[day] = { city, from: origin };
+      if (city) { state.placeCity = city; toast(t.days[day].from ? `${origin} → ${city}` : `${city}: ${end - from + 1} hari`); }
     },
   });
 }
@@ -1784,6 +2067,7 @@ function itemForm(t, it, day) {
   if (!isNew && !days.some((d) => d[0] === it.day)) days.unshift([it.day, `${dayLabel(it.day)} (di luar trip)`]);
   const stayX = it && it.type === 'stay' ? { stayIn: it.day, stayOut: it.dayEnd, timeIn: it.time, timeOut: it.timeOut, priceMode: it.priceMode } : null;
   const costShown = it && it.type === 'stay' && it.priceMode !== 'total' && it.perNight ? it.perNight : it?.cost;
+  const linked = it ? linkedBooking(t, it) : null;
   openForm({
     title: isNew ? 'Aktivitas baru' : 'Ubah aktivitas',
     fields: [
@@ -1791,26 +2075,61 @@ function itemForm(t, it, day) {
       { name: 'type', label: 'Jenis', type: 'select', options: ITEM_TYPES, value: it?.type || 'activity' },
       { name: 'day', label: 'Hari', type: 'select', options: days, value: it?.day || day || days[0]?.[0], half: true, when: 'type!=stay' },
       { name: 'time', label: 'Jam', type: 'time', value: it?.time, half: true, when: 'type!=stay' },
+      { name: 'at', label: 'Di kota', type: 'select', options: [['', '']], value: '', when: 'type!=stay' },
       ...stayFields('type=stay', stayX, day || it?.day || days[0]?.[0]),
       { name: 'location', label: 'Lokasi', type: 'place', value: it?.location, g: it?.g, placeholder: 'Kiss Bridge', hint: true },
       { name: 'note', label: 'Catatan', type: 'textarea', value: it?.note, placeholder: 'Tips, jam buka, apa yang dibawa…' },
       priceModeField('type=stay', stayX),
       { name: 'cost', label: 'Perkiraan biaya', type: 'money', value: costShown, cur: it?.cur },
+      { name: 'paid', label: 'Pembayaran', type: 'select', value: it && itemExpense(t, it) ? 'yes' : 'no',
+        options: [['no', 'Belum dibayar'], ['yes', 'Sudah dibayar (catat di Pengeluaran)']] },
+      { name: 'book', label: 'Catat juga di tab Booking', type: 'select', value: (isNew ? BOOK_AUTO.includes('activity') : linked) ? 'yes' : 'no',
+        options: [['yes', 'Ya, buat/perbarui booking otomatis'], ['no', 'Tidak perlu booking']] },
+      { name: 'bookCode', label: 'Kode booking (isi jika sudah pesan)', value: linked?.code, placeholder: 'contoh: VJ7XKQ', when: 'book=yes' },
     ],
     onSubmit(v) {
+      if (v.paid === 'yes' && !num(v.cost)) { toast('Isi biayanya dulu supaya bisa dicatat di Pengeluaran'); $('#f-cost').focus(); return false; }
       const data = { title: v.title, day: v.day, time: v.time, type: v.type, location: v.location, note: v.note, cost: num(v.cost), cur: v.costCur || t.cur, g: readG(v),
-        dayEnd: null, timeOut: null, nights: null, perNight: null, priceMode: null };
+        dayEnd: null, timeOut: null, nights: null, perNight: null, priceMode: null, at: null };
+      // hari pindah kota: simpan hanya jika aktivitasnya di kota asal (kosong = kota tujuan)
+      if (v.type !== 'stay' && v.at && fromOf(t, v.day) && fold(v.at) === fold(fromOf(t, v.day))) data.at = fromOf(t, v.day);
       if (v.type === 'stay') {
         const s = readStay(v);
         if (!s.nights) { toast('Pilih tanggal check-in dan check-out'); $('#f-stay-btn').click(); return false; }
         const p = stayPrice(data.cost, v.priceMode, s.nights);
         Object.assign(data, { day: s.stayIn, dayEnd: s.stayOut, time: s.timeIn, timeOut: s.timeOut, nights: s.nights, priceMode: v.priceMode, cost: p.total, perNight: p.perNight });
       }
-      if (isNew) t.items.push(Object.assign({ id: uid(), done: false }, data, { order: insertOrder(t, data.day, data.time) }));
+      let x = it;
+      if (isNew) t.items.push(x = Object.assign({ id: uid(), done: false }, data, { order: insertOrder(t, data.day, data.time) }));
       else { const moved = it.day !== data.day; Object.assign(it, data); if (moved) it.order = insertOrder(t, data.day, data.time, it.id); }
+      if (v.book === 'yes') { const b = syncBookingFromItem(t, x, v.bookCode || ''); if (isNew) toast(`Tercatat juga di Booking: ${label(BOOK_KINDS, b.kind)}`); }
+      else unlinkBooking(t, x);
+      if (v.paid === 'yes') { upsertExpense(t, { itemId: x.id }, expFromItem(x)); markPaid(linkedBooking(t, x)); }
+      else { const ex = itemExpense(t, x); if (ex) t.expenses = t.expenses.filter((i) => i !== ex); }
     },
-    onDelete: isNew ? null : () => { t.items = t.items.filter((x) => x.id !== it.id); },
+    onDelete: isNew ? null : () => {
+      unlinkBooking(t, it);
+      t.expenses.forEach((e) => { if (e.itemId === it.id) e.itemId = null; }); // uangnya tetap tercatat keluar
+      t.items = t.items.filter((x) => x.id !== it.id);
+    },
   });
+  syncAtField(t, it?.at || '');
+  const bookSel = $('#f-book');
+  if (isNew && bookSel) {
+    bookSel.addEventListener('change', () => { bookSel.dataset.touched = '1'; });
+    $('#f-type').addEventListener('change', (e) => { if (!bookSel.dataset.touched) { bookSel.value = BOOK_AUTO.includes(e.target.value) ? 'yes' : 'no'; applyWhen($('#sheetForm')); } });
+  }
+}
+// Kolom "Di kota" hanya muncul jika hari yang dipilih adalah hari pindah kota.
+function syncAtField(t, want) {
+  const sel = $('#f-at'), dayEl = $('#f-day'); if (!sel || !dayEl) return;
+  const d = dayEl.value, from = fromOf(t, d), city = cityOf(t, d);
+  const keep = want !== undefined ? want : sel.value;
+  const box = sel.closest('.f');
+  if (!from || !city) { sel.innerHTML = '<option value=""></option>'; box.style.display = 'none'; return; }
+  box.style.display = '';
+  sel.innerHTML = `<option value="${esc(from)}">${esc(from)} · sebelum/saat berangkat</option><option value="">${esc(city)} · setelah tiba</option>`;
+  sel.value = keep && fold(keep) === fold(from) ? from : '';
 }
 // Posisi baru: sebelum aktivitas pertama yang jamnya lebih akhir, selain itu di paling bawah.
 function insertOrder(t, day, time, exceptId) {
@@ -1851,7 +2170,7 @@ function scheduleForm(t, p) {
       { name: 'keep', label: 'Setelah dijadwalkan', type: 'select', options: [['remove', 'Hapus dari daftar tempat'], ['keep', 'Tetap simpan di daftar']], value: 'remove' },
     ],
     onSubmit(v) {
-      t.items.push({ id: uid(), title: p.title, type: p.type, location: p.location, note: p.note, ratings: p.ratings, day: v.day, time: v.time, cost: 0, cur: t.cur, done: false, order: insertOrder(t, v.day, v.time) });
+      t.items.push({ id: uid(), title: p.title, type: p.type, location: p.location, note: p.note, ratings: p.ratings, g: p.g || null, recs: p.recs || [], day: v.day, time: v.time, cost: 0, cur: t.cur, done: false, order: insertOrder(t, v.day, v.time) });
       if (v.keep === 'remove') t.places = t.places.filter((x) => x.id !== p.id);
       toast('Masuk ke rencana ' + shortDate(v.day));
     },
@@ -1874,13 +2193,17 @@ function bookingForm(t, b) {
       { name: 'code', label: 'Kode konfirmasi / nomor booking', value: b?.code },
       priceModeField('kind=stay', stayX),
       { name: 'price', label: 'Harga', type: 'money', value: priceShown, cur: b?.cur },
+      { name: 'paid', label: 'Pembayaran', type: 'select', value: b && bookingExpense(t, b) ? 'yes' : 'no',
+        options: [['no', 'Belum dibayar'], ['yes', 'Sudah dibayar (catat di Pengeluaran)']] },
       { name: 'link', label: 'Link pemesanan', type: 'url', value: b?.link, placeholder: 'https://' },
       { name: 'note', label: 'Catatan', type: 'textarea', value: b?.note },
     ],
     onSubmit(v) {
+      if (v.paid === 'yes' && !num(v.price)) { toast('Isi harganya dulu supaya bisa dicatat di Pengeluaran'); $('#f-price').focus(); return false; }
       let link = v.link; if (link && !/^https?:\/\//i.test(link)) link = 'https://' + link;
       const data = { title: v.title, kind: v.kind, status: v.status, date: v.date, time: v.time, code: v.code, price: num(v.price), cur: v.priceCur || 'VND', link, note: v.note,
         dateEnd: null, timeOut: null, nights: null, perNight: null, priceMode: null };
+      if (data.code && !(b && b.code) && data.status === 'todo') data.status = 'booked'; // kode baru diisi = sudah dipesan
       if (v.kind === 'stay') {
         const s = readStay(v);
         if (!s.nights) { toast('Pilih tanggal check-in dan check-out'); $('#f-stay-btn').click(); return false; }
@@ -1888,8 +2211,24 @@ function bookingForm(t, b) {
         Object.assign(data, { date: s.stayIn, dateEnd: s.stayOut, time: s.timeIn, timeOut: s.timeOut, nights: s.nights, priceMode: v.priceMode, price: p.total, perNight: p.perNight });
       }
       if (isNew) t.bookings.push(Object.assign({ id: uid() }, data)); else Object.assign(b, data);
+      // booking dari Rencana: perubahan nama, tanggal, jam, dan harga ikut ke aktivitasnya
+      const it = !isNew && b.itemId && t.items.find((x) => x.id === b.itemId);
+      if (it) {
+        const moved = it.day !== data.date;
+        Object.assign(it, { title: data.title, time: data.time, cost: data.price, cur: data.cur });
+        if (data.date) it.day = data.date;
+        if (it.type === 'stay' && data.kind === 'stay') Object.assign(it, { dayEnd: data.dateEnd, timeOut: data.timeOut, nights: data.nights, perNight: data.perNight, priceMode: data.priceMode });
+        if (moved && data.date) it.order = insertOrder(t, it.day, it.time, it.id);
+      }
+      const bk = isNew ? t.bookings[t.bookings.length - 1] : b;
+      if (v.paid === 'yes') { upsertExpense(t, it ? { itemId: it.id } : { bookingId: bk.id }, it ? expFromItem(it) : expFromBooking(bk)); markPaid(bk); }
+      else { const ex = bookingExpense(t, bk); if (ex) t.expenses = t.expenses.filter((i) => i !== ex); }
     },
-    onDelete: isNew ? null : () => { t.bookings = t.bookings.filter((x) => x.id !== b.id); },
+    onDelete: isNew ? null : () => {
+      t.expenses.forEach((e) => { if (e.bookingId === b.id) e.bookingId = null; });
+      t.items.forEach((x) => { if (x.bookingId === b.id) x.bookingId = null; });
+      t.bookings = t.bookings.filter((x) => x.id !== b.id);
+    },
   });
 }
 
@@ -1899,6 +2238,12 @@ function expenseForm(t, e) {
   const defDay = e?.date || (today >= t.start && today <= t.end ? today : t.start);
   const stayX = e && e.category === 'stay' ? { stayIn: e.date, stayOut: e.dateEnd, priceMode: e.priceMode } : null;
   const amountShown = e && e.category === 'stay' && e.priceMode !== 'total' && e.perNight ? e.perNight : e?.amount;
+  const linkedItem = e && e.itemId && t.items.find((x) => x.id === e.itemId);
+  const linkedBook = e && e.bookingId && t.bookings.find((x) => x.id === e.bookingId);
+  const curLink = linkedItem ? 'i:' + linkedItem.id : linkedBook ? 'b:' + linkedBook.id : isNew ? 'new' : 'none';
+  const linkOpts = [['new', 'Buat otomatis di Rencana (+ Booking)'], ['none', 'Tidak masuk Rencana']]
+    .concat(sortItems(t.items).sort((a, b) => (a.day || '').localeCompare(b.day || '')).map((x) => ['i:' + x.id, `Rencana: ${x.title} · ${shortDate(x.day)}`]))
+    .concat(t.bookings.filter((b) => !(b.itemId && t.items.some((x) => x.id === b.itemId))).map((b) => ['b:' + b.id, `Booking: ${b.title}${b.date ? ' · ' + shortDate(b.date) : ''}`]));
   openForm({
     title: isNew ? 'Pengeluaran baru' : 'Ubah pengeluaran',
     fields: [
@@ -1908,20 +2253,33 @@ function expenseForm(t, e) {
       stayFields('category=stay', stayX, defDay)[0],
       priceModeField('category=stay', stayX),
       { name: 'amount', label: 'Jumlah', type: 'money', value: amountShown, cur: e?.cur },
+      { name: 'pay', label: 'Cara bayar', type: 'select', value: e?.pay || 'card',
+        options: [['card', 'Cashless / online (kartu, QRIS, e-wallet)'], ['cash', state.manual[t.cur] ? 'Tunai (kurs money changer)' : 'Tunai']] },
+      { name: 'link', label: 'Hubungkan ke Rencana / Booking', type: 'select', value: curLink, options: linkOpts },
     ],
     onSubmit(v) {
       let amount = num(v.amount); if (!amount) { toast('Isi jumlahnya'); return false; }
-      const data = { title: v.title, amount, cur: v.amountCur || 'VND', category: v.category, date: v.date, dateEnd: null, nights: null, perNight: null, priceMode: null };
+      const data = { title: v.title, amount, cur: v.amountCur || 'VND', category: v.category, date: v.date, pay: v.pay, dateEnd: null, nights: null, perNight: null, priceMode: null };
       if (v.category === 'stay') {
         const s = readStay(v);
         if (!s.nights) { toast('Pilih tanggal check-in dan check-out'); $('#f-stay-btn').click(); return false; }
         const p = stayPrice(amount, v.priceMode, s.nights);
         Object.assign(data, { date: s.stayIn, dateEnd: s.stayOut, nights: s.nights, priceMode: v.priceMode, amount: p.total, perNight: p.perNight });
       }
-      if (isNew) t.expenses.push(Object.assign({ id: uid() }, data)); else Object.assign(e, data);
+      let x = e;
+      if (isNew) t.expenses.push(x = Object.assign({ id: uid() }, data)); else Object.assign(e, data);
+      if (v.link === 'new') { const it = itemFromExpense(t, x); if (isNew) toast(`Masuk juga ke Rencana ${shortDate(it.day)}${linkedBooking(t, it) ? ' dan Booking' : ''}`); }
+      else if (v.link.startsWith('i:')) { x.itemId = v.link.slice(2); x.bookingId = null; applyExpense(t, x); }
+      else if (v.link.startsWith('b:')) { x.bookingId = v.link.slice(2); x.itemId = null; applyExpense(t, x); }
+      else { x.itemId = null; x.bookingId = null; }
     },
     onDelete: isNew ? null : () => { t.expenses = t.expenses.filter((x) => x.id !== e.id); },
   });
+  const linkSel = $('#f-link');
+  if (isNew && linkSel) {
+    linkSel.addEventListener('change', () => { linkSel.dataset.touched = '1'; });
+    $('#f-category').addEventListener('change', (ev) => { if (!linkSel.dataset.touched) linkSel.value = EXP_AUTO.includes(ev.target.value) ? 'new' : 'none'; });
+  }
 }
 
 function budgetForm(t) {
@@ -2114,7 +2472,7 @@ const actions = {
   },
   setCity(d) { const t = trip(); cityForm(t, d.d || t.start); },
   pickCountry() { openCountryPicker(); },
-  pickCity() { openCityPicker(); },
+  pickCity(d) { cityTarget = d.t || 'city'; openCityPicker(); },
   pickRange() { openRangePicker(); },
   rangeDay(d) { pickRangeDay(d.d); },
   rangeApply() { applyRange(); },
@@ -2159,6 +2517,13 @@ const actions = {
     else openSheetHtml('Pasang di HP', installHelp());
   },
   addPlace() { placeForm(trip(), null); },
+  addSocialPlace() { socialPlaceForm(trip()); },
+  addRec(d) { const t = trip(); const x = find(t[d.kind], d.id); if (x) recForm(t, d.kind, x); },
+  delRec(d) {
+    const t = trip(); const x = find(t[d.kind], d.id); if (!x) return;
+    x.recs = (x.recs || []).filter((r) => r.id !== d.r); save(); render(); reviewSheet(t, d.kind, x);
+  },
+  placeFilter(d) { state.placeFilter = d.k; save(true); render(); },
   editPlace(d) { const t = trip(); placeForm(t, find(t.places, d.id)); },
   schedulePlace(d) { const t = trip(); scheduleForm(t, find(t.places, d.id)); },
   addBooking() { bookingForm(trip(), null); },
@@ -2171,6 +2536,11 @@ const actions = {
   copy(d, el) { copyText(d.text, null); },
   addExpense() { expenseForm(trip(), null); },
   editExpense(d) { const t = trip(); expenseForm(t, find(t.expenses, d.id)); },
+  linkExpenses() {
+    const t = trip(); const list = unlinkedExpenses(t);
+    list.forEach((e) => itemFromExpense(t, e));
+    save(); render(); toast(`${list.length} pengeluaran terhubung ke Rencana`);
+  },
   setBudget() { budgetForm(trip()); },
   addCheck() { checkForm(trip()); },
   toggleCheck(d) { const c = find(trip().checklist, d.id); if (c) { c.done = !c.done; save(); render(); } },
@@ -2276,6 +2646,8 @@ window.addEventListener('online', () => {
 window.addEventListener('offline', () => render());
 render();
 refreshRates(false);
+setInterval(() => { if (!document.hidden) refreshRates(false); }, LIVE_MAX_AGE);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshRates(false); });
 startSync();
 handleHash();
 

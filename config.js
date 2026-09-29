@@ -6,12 +6,13 @@
  *    Salin objek firebaseConfig dari Firebase Console → Project settings → Your apps → Web app.
  *    Contoh bentuknya:
  *    firebase: {
- *      apiKey: "AIza...",
- *      authDomain: "nama-proyek.firebaseapp.com",
- *      projectId: "nama-proyek",
- *      storageBucket: "nama-proyek.appspot.com",
- *      messagingSenderId: "1234567890",
- *      appId: "1:1234567890:web:abcdef"
+ *      apiKey: "AIzaSyDmVHFaPe3oAUMWkaFksuoBcKVw-KR3MBw",
+ *      authDomain: "jalan-public.firebaseapp.com",
+ *      projectId: "jalan-public",
+ *      storageBucket: "jalan-public.firebasestorage.app",
+ *      messagingSenderId: "940767777025",
+ *      appId: "1:940767777025:web:93740829d230f64393cb00"
+ *      measurementId: "G-1TVFWW4F3M"
  *    },
  *
  * 2) googleMapsKey: untuk rating Google dan link Google Maps otomatis saat mencari tempat.
